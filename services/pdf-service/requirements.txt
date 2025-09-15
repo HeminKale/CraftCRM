@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-multipart
+python-docx
+PyMuPDF
+Pillow
+requests
+qrcode[pil]
+# OCR dependencies for image support
+pytesseract>=0.3.10
+opencv-python>=4.8.0
+easyocr>=1.7.0
+numpy>=1.21.0

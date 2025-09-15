@@ -1,0 +1,33 @@
+-- Migration needed: Create bridge function
+CREATE OR REPLACE FUNCTION tenant.get_record_lists(
+  p_object_id UUID,
+  p_tenant_id UUID
+) RETURNS TABLE (
+  id UUID,
+  name TEXT,
+  description TEXT,
+  selected_fields TEXT[],
+  is_active BOOLEAN,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    rl.id,
+    rl.name,
+    rl.description,
+    rl.selected_fields,
+    rl.is_active,
+    rl.created_at,
+    rl.updated_at
+  FROM tenant.record_lists rl
+  WHERE rl.object_id = p_object_id 
+    AND rl.tenant_id = p_tenant_id
+    AND rl.is_active = true
+  ORDER BY rl.name;
+END;
+$$;

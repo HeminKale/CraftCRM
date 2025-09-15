@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Next.js Application
+  craft-app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - PDF_SERVICE_URL=http://pdf-service:8000
+    depends_on:
+      - pdf-service
+    restart: unless-stopped
+    networks:
+      - craft-network
+
+  # PDF Service
+  pdf-service:
+    build: ./services/pdf-service
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+    restart: unless-stopped
+    networks:
+      - craft-network
+    volumes:
+      - ./services/pdf-service/templates:/app/templates
+      - ./services/pdf-service/fonts:/app/fonts
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - craft-app
+      - pdf-service
+    restart: unless-stopped
+    networks:
+      - craft-network
+
+networks:
+  craft-network:
+    driver: bridge

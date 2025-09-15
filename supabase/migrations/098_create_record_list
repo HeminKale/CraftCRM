@@ -1,0 +1,26 @@
+-- Migration needed: Create RPC function
+CREATE OR REPLACE FUNCTION public.create_record_list(
+  p_name TEXT,
+  p_description TEXT,
+  p_object_id UUID,
+  p_tenant_id UUID,
+  p_selected_fields TEXT[],
+  p_filter_criteria JSONB
+) RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_record_list_id UUID;
+BEGIN
+  INSERT INTO tenant.record_lists (
+    name, description, object_id, tenant_id, 
+    selected_fields, filter_criteria
+  ) VALUES (
+    p_name, p_description, p_object_id, p_tenant_id,
+    p_selected_fields, p_filter_criteria
+  ) RETURNING id INTO v_record_list_id;
+  
+  RETURN v_record_list_id;
+END;
+$$;

@@ -1,0 +1,43 @@
+-- Add the update_tenant_record function
+CREATE OR REPLACE FUNCTION update_tenant_record(
+  p_table_name TEXT,
+  p_record_id UUID,
+  p_tenant_id UUID,
+  p_update_data JSONB
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_sql TEXT;
+  v_table_name TEXT;
+BEGIN
+  -- Validate table name to prevent SQL injection
+  IF p_table_name !~ '^[a-zA-Z_][a-zA-Z0-9_]*$' THEN
+    RAISE EXCEPTION 'Invalid table name: %', p_table_name;
+  END IF;
+  
+  -- Construct the full table name
+  v_table_name := 'tenant.' || p_table_name;
+  
+  -- Build and execute the update query
+  v_sql := format(
+    'UPDATE %I SET %s, updated_at = NOW() WHERE id = %L AND tenant_id = %L',
+    v_table_name,
+    (
+      SELECT string_agg(format('%I = %L', key, value), ', ')
+      FROM jsonb_each_text(p_update_data)
+    ),
+    p_record_id,
+    p_tenant_id
+  );
+  
+  EXECUTE v_sql;
+  
+  -- Check if any rows were affected
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Record not found or no permission to update';
+  END IF;
+END;
+$$;

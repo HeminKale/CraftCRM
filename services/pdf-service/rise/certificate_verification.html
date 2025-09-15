@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Certificate Verification - Americo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .logo {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1rem;
+        }
+        
+        .cert-info {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        
+        .label {
+            font-weight: 600;
+            color: #495057;
+            font-size: 1rem;
+        }
+        
+        .value {
+            color: #212529;
+            font-size: 1rem;
+            text-align: right;
+            max-width: 60%;
+            word-wrap: break-word;
+        }
+        
+        .status {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: 600;
+        }
+        
+        .footer {
+            margin-top: 30px;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+        
+        .qr-info {
+            background: #e3f2fd;
+            color: #0d47a1;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            .info-row {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+            }
+            
+            .value {
+                text-align: left;
+                max-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">Americo</div>
+        <div class="subtitle">Certificate Verification System</div>
+        
+        <div class="status">
+            ✅ Certificate Information Retrieved Successfully
+        </div>
+        
+        <div class="cert-info" id="certInfo">
+            <!-- Certificate information will be populated here -->
+        </div>
+        
+        <div class="qr-info">
+            📱 This information was retrieved by scanning a QR code on your certificate
+        </div>
+        
+        <div class="footer">
+            
+            <p>For verification inquiries, contact our support team.</p>
+        </div>
+    </div>
+
+    <script>
+        // Function to get URL parameters
+        function getUrlParameter(name) {
+            name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+            var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+            var results = regex.exec(location.search);
+            return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+        }
+        
+        // Function to format date
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            
+            // ✅ FIXED: Handle DD/MM/YYYY format from old soft copies
+            if (dateString.includes('/') && dateString.split('/').length === 3) {
+                const parts = dateString.split('/');
+                const day = parts[0];
+                const month = parts[1];
+                const year = parts[2];
+                
+                // Validate parts are numbers
+                if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+                    // Convert DD/MM/YYYY to MM/DD/YYYY for display
+                    return `${month}/${day}/${year}`;
+                }
+            }
+            
+            try {
+                const date = new Date(dateString);
+                
+                // Check if date is valid
+                if (isNaN(date.getTime())) {
+                    // If parsing failed, try to format the original string
+                    return dateString;
+                }
+                
+                return date.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+            } catch (e) {
+                // If all else fails, return the original string
+                return dateString;
+            }
+        }
+        
+        // Function to populate certificate information
+        function populateCertInfo() {
+            const certInfo = {
+                'Certificate Number': getUrlParameter('cert'),
+                'Company Name': getUrlParameter('company'),
+                'Certificate Standard': getUrlParameter('standard'),
+                'Issue Date': getUrlParameter('issue'),
+                'Expiry Date': getUrlParameter('expiry'),  // ✅ UPDATED: Now contains data from any surveillance field (Surveillance/ Expiry Date, Surveillance Due Date, or Expiry Date)
+                'Certification Body': 'Americo',
+                'Accreditation Body': 'UAF'
+            };
+            
+            const container = document.getElementById('certInfo');
+            let html = '';
+            
+            for (const [label, value] of Object.entries(certInfo)) {
+                if (value) {
+                    let displayValue = value;
+                    
+                    // Format dates
+                    if (label.includes('Date')) {
+                        displayValue = formatDate(value);
+                    }
+                    
+                    html += `
+                        <div class="info-row">
+                            <span class="label">${label}:</span>
+                            <span class="value">${displayValue}</span>
+                        </div>
+                    `;
+                }
+            }
+            
+            // If no data found, show a message
+            if (!html) {
+                html = `
+                    <div class="info-row">
+                        <span class="label">Status:</span>
+                        <span class="value">No certificate data found</span>
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        // Populate information when page loads
+        document.addEventListener('DOMContentLoaded', populateCertInfo);
+        
+        // Also populate if URL changes (for testing)
+        window.addEventListener('popstate', populateCertInfo);
+    </script>
+</body>
+</html>
