@@ -139,6 +139,36 @@ ISO_STANDARDS_DESCRIPTIONS = {
     "ISO 29993:2017": "Learning Services",
 }
 
+# Spanish ISO Standards Descriptions Mapping
+ISO_STANDARDS_DESCRIPTIONS_SPANISH = {
+    "ISO 9001:2015": "el Sistema de Gestión de Calidad",
+    "ISO 14001:2015": "el Sistema de gestión ambiental",
+    "ISO 45001:2018": "el Sistema de gestión de seguridad y salud en el trabajo",
+    "ISO 50001:2018": "el Sistema de Gestión Energética",
+    "ISO 31000:2018": "Directrices para la Gestión del Riesgo",
+    "ISO 22000:2018": "el Sistema de Gestión de Seguridad Alimentaria",
+    "ISO/TS 22002-1:2009": "Programas de prerrequisitos en seguridad alimentaria",
+    "ISO 22005:2007": "Trazabilidad en la cadena alimentaria y de piensos",
+    "ISO/IEC 17025:2017": "Laboratorios de Ensayo y Calibración",
+    "ISO 15189:2022": "Laboratorios Médicos – Calidad y Competencia",
+    "ISO/IEC 27001:2022": "Sistema de Gestión de Seguridad de la Información",
+    "ISO/IEC 27002:2022": "Controles de Seguridad de la Información",
+    "ISO/IEC 20000-1:2018": "Sistema de Gestión de Servicios de TI",
+    "ISO/IEC 22301:2019": "Sistema de Gestión de Continuidad del Negocio",
+    "ISO 13485:2016": "Dispositivos Médicos – Sistema de Gestión de Calidad",
+    "IATF 16949:2016": "Sistema de Calidad Automotriz",
+    "ISO 3834-2:2021": "Requisitos de calidad para soldadura por fusión",
+    "ISO 14064-1:2018": "Gases de Efecto Invernadero",
+    "ISO 14046:2014": "Huella Hídrica",
+    "ISO 20121:2012": "Sistema de Gestión de Sostenibilidad de Eventos",
+    "ISO 55001:2014": "Sistema de Gestión de Activos",
+    "ISO 28000:2022": "Sistemas de Gestión de Seguridad para la Cadena de Suministro",
+    "AS 9100D:2016": "Calidad Aeroespacial (basado en ISO 9001:2015)",
+    "ISO 37001:2016": "el Sistema de gestión antisoborno",
+    "ISO 19600:2014": "Sistema de Gestión de Cumplimiento",
+    "ISO 29993:2017": "Servicios de Aprendizaje",
+}
+
 def expand_iso_standard(iso_text: str) -> str:
     """Expand ISO standard name to full version with year if available."""
     if not iso_text:
@@ -1739,26 +1769,42 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             # Expand the ISO standard to full version with year
             expanded_iso = expand_iso_standard(iso_standard_text)
             
-            # Get the description from the mapping using the expanded version
-            system_name = ISO_STANDARDS_DESCRIPTIONS.get(expanded_iso, "Management System")
+            # Get the language preference first
+            language = values.get("Language", "").strip().lower()
+            
+            
+            # Get the description from the appropriate language mapping
+            if language == "s":
+                system_name = ISO_STANDARDS_DESCRIPTIONS_SPANISH.get(expanded_iso, "Sistema de Gestión")
+            else:
+                system_name = ISO_STANDARDS_DESCRIPTIONS.get(expanded_iso, "Management System")
             
             # Capitalize first letters of each word in system_name, with special handling for acronyms
-            def capitalize_management_system(name):
+            def capitalize_management_system(name, is_spanish=False):
                 words = name.split()
                 result = []
                 for word in words:
-                    if word.upper() in ['IT', 'ISO', 'IEC', 'OH&S', 'HSE', 'EMS', 'QMS', 'FSMS', 'ISMS', 'ABMS']:
-                        # Keep acronyms in all caps
-                        result.append(word.upper())
+                    if is_spanish:
+                        # Spanish acronyms and special cases
+                        if word.upper() in ['IT', 'ISO', 'IEC', 'TI', 'SGC', 'SGA', 'SGSST', 'SGSE', 'SGSI', 'SGSA', 'SGAS']:
+                            result.append(word.upper())
+                        elif word.lower() in ['el', 'la', 'de', 'del', 'en', 'y', 'o', 'con', 'para', 'por']:
+                            # Keep Spanish articles and prepositions lowercase
+                            result.append(word.lower())
+                        else:
+                            # Capitalize first letter of each word
+                            result.append(word.capitalize())
                     else:
-                        # Capitalize first letter of each word
-                        result.append(word.capitalize())
+                        # English acronyms
+                        if word.upper() in ['IT', 'ISO', 'IEC', 'OH&S', 'HSE', 'EMS', 'QMS', 'FSMS', 'ISMS', 'ABMS']:
+                            result.append(word.upper())
+                        else:
+                            result.append(word.capitalize())
                 return ' '.join(result)
             
-            system_name_caps = capitalize_management_system(system_name)
+            system_name_caps = capitalize_management_system(system_name, is_spanish=(language == "s"))
             
             # Create the management system line with Language support
-            language = values.get("Language", "").strip().lower()
             if language == "s":
                 management_line = f"Esto es para certificar que {system_name_caps} de"
             else:
@@ -1766,8 +1812,6 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             
             # Get the management_system rectangle
             management_rect = coords["management_system"]
-            
-
             
             # Calculate center position for the text
             center_x = (management_rect.x0 + management_rect.x1) / 2

@@ -64,11 +64,12 @@ export async function POST(request: NextRequest) {
       "Logo": jsonData["Logo"]?.trim() || '',
       "Country": jsonData["Country"]?.trim() || '',
       "Extra Line": jsonData["Extra Line"]?.trim() || '',
+      "Language": jsonData["Language"]?.trim() || '',  // ✅ ADDED: Language field
       // ✅ ADDED: Pass logo files to Python service
       logo_lookup: logoLookup
     };
 
-    // Debug logging for Address alignment
+    // Debug logging for Address alignment and Language
     console.log('🔍 [FRONTEND] Address alignment from Excel:', jsonData["Address alignment"]);
     console.log('🔍 [FRONTEND] Address alignment in softCopyData:', softCopyData["Address alignment"]);
 
