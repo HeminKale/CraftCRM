@@ -18,13 +18,15 @@ NC='\033[0m' # No Color
 VPS_USER="root"  # Change this to your VPS username
 VPS_HOST=""      # Add your VPS IP address here
 VPS_PATH="/var/www/craft-app"  # Change this to your desired path
-LOCAL_PATH="$(pwd)"
+GITHUB_REPO="https://github.com/HeminKale/CraftCRM.git"
+BRANCH="main"
 
 echo -e "${BLUE}📋 Deployment Configuration:${NC}"
 echo "VPS Host: $VPS_HOST"
 echo "VPS User: $VPS_USER"
 echo "VPS Path: $VPS_PATH"
-echo "Local Path: $LOCAL_PATH"
+echo "GitHub Repo: $GITHUB_REPO"
+echo "Branch: $BRANCH"
 echo ""
 
 # Check if VPS_HOST is set
@@ -41,46 +43,14 @@ if [ "$confirm" != "yes" ]; then
     exit 1
 fi
 
-echo -e "${BLUE}🔧 Step 1: Preparing local environment...${NC}"
+echo -e "${BLUE}🚀 Step 1: Cloning repository on VPS...${NC}"
 
-# Create .env.production file
-cat > .env.production << EOF
-# Production Environment Variables
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url_here
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
-NEXTAUTH_URL=https://your-domain.com
-NEXTAUTH_SECRET=your_nextauth_secret_here
-PDF_SERVICE_URL=http://localhost:8000
-NODE_ENV=production
-EOF
+# Clone the repository on VPS
+ssh $VPS_USER@$VPS_HOST "rm -rf $VPS_PATH && git clone -b $BRANCH $GITHUB_REPO $VPS_PATH"
 
-echo -e "${GREEN}✅ Created .env.production file${NC}"
+echo -e "${GREEN}✅ Repository cloned successfully${NC}"
 
-# Build the Next.js application
-echo -e "${BLUE}🔨 Step 2: Building Next.js application...${NC}"
-npm run build
-
-echo -e "${GREEN}✅ Next.js build completed${NC}"
-
-echo -e "${BLUE}🚀 Step 3: Uploading files to VPS...${NC}"
-
-# Create the directory structure on VPS
-ssh $VPS_USER@$VPS_HOST "mkdir -p $VPS_PATH && rm -rf $VPS_PATH/*"
-
-# Upload all files except node_modules and .next
-rsync -avz --progress \
-    --exclude 'node_modules' \
-    --exclude '.next' \
-    --exclude '.git' \
-    --exclude '*.log' \
-    --exclude '.env.local' \
-    --exclude 'tsconfig.tsbuildinfo' \
-    $LOCAL_PATH/ $VPS_USER@$VPS_HOST:$VPS_PATH/
-
-echo -e "${GREEN}✅ Files uploaded successfully${NC}"
-
-echo -e "${BLUE}🔧 Step 4: Setting up VPS environment...${NC}"
+echo -e "${BLUE}🔧 Step 2: Setting up VPS environment...${NC}"
 
 # Run setup commands on VPS
 ssh $VPS_USER@$VPS_HOST << 'EOF'
@@ -99,8 +69,26 @@ apt-get install -y python3.9 python3.9-pip python3.9-venv
 # Install PM2 for process management
 npm install -g pm2
 
+# Install Git if not already installed
+apt-get install -y git
+
+# Create .env.production file
+cat > .env.production << 'ENVEOF'
+# Production Environment Variables
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url_here
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
+NEXTAUTH_URL=https://your-domain.com
+NEXTAUTH_SECRET=your_nextauth_secret_here
+PDF_SERVICE_URL=http://localhost:8000
+NODE_ENV=production
+ENVEOF
+
 # Install project dependencies
 npm install --production
+
+# Build the Next.js application
+npm run build
 
 # Set up Python virtual environment for PDF service
 cd services/pdf-service
@@ -153,7 +141,7 @@ EOF
 
 echo -e "${GREEN}✅ VPS environment setup completed${NC}"
 
-echo -e "${BLUE}🌐 Step 5: Setting up Nginx reverse proxy...${NC}"
+echo -e "${BLUE}🌐 Step 3: Setting up Nginx reverse proxy...${NC}"
 
 # Configure Nginx
 ssh $VPS_USER@$VPS_HOST << 'EOF'
@@ -203,7 +191,7 @@ EOF
 
 echo -e "${GREEN}✅ Nginx configuration completed${NC}"
 
-echo -e "${BLUE}🔒 Step 6: Setting up SSL with Let's Encrypt...${NC}"
+echo -e "${BLUE}🔒 Step 4: Setting up SSL with Let's Encrypt...${NC}"
 
 # Install Certbot and get SSL certificate
 ssh $VPS_USER@$VPS_HOST << 'EOF'
@@ -224,5 +212,6 @@ echo "2. Update Nginx configuration with your domain name"
 echo "3. Run: certbot --nginx -d your-domain.com -d www.your-domain.com"
 echo "4. Check application status: pm2 status"
 echo "5. View logs: pm2 logs"
+echo "6. To update from GitHub: git pull origin main && pm2 restart all"
 echo ""
 echo -e "${GREEN}Your Craft App is now running on your VPS! 🚀${NC}"
