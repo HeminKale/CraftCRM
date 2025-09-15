@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 VPS_USER="root"  # Change this to your VPS username
 VPS_HOST=""      # Add your VPS IP address here
 VPS_PATH="/var/www/craft-app"  # Change this to your desired path
-BRANCH="Version_1"
+BRANCH="main"
 
 echo -e "${BLUE}🔄 Starting Craft App VPS Update...${NC}"
 

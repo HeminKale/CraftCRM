@@ -19,7 +19,7 @@ VPS_USER="root"  # Change this to your VPS username
 VPS_HOST=""      # Add your VPS IP address here
 VPS_PATH="/var/www/craft-app"  # Change this to your desired path
 GITHUB_REPO="https://github.com/HeminKale/CraftCRM.git"
-BRANCH="Version_1"
+BRANCH="main"
 
 echo -e "${BLUE}📋 Deployment Configuration:${NC}"
 echo "VPS Host: $VPS_HOST"
@@ -212,6 +212,6 @@ echo "2. Update Nginx configuration with your domain name"
 echo "3. Run: certbot --nginx -d your-domain.com -d www.your-domain.com"
 echo "4. Check application status: pm2 status"
 echo "5. View logs: pm2 logs"
-echo "6. To update from GitHub: git pull origin Version_1 && pm2 restart all"
+echo "6. To update from GitHub: git pull origin main && pm2 restart all"
 echo ""
 echo -e "${GREEN}Your Craft App is now running on your VPS! 🚀${NC}"
