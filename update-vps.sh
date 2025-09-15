@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 VPS_USER="root"  # Change this to your VPS username
-VPS_HOST=""      # Add your VPS IP address here
+VPS_HOST="157.173.222.165"      # Your Hostinger VPS IP
 VPS_PATH="/var/www/craft-app"  # Change this to your desired path
 BRANCH="main"
 
