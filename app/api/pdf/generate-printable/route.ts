@@ -26,6 +26,13 @@ export async function POST(request: NextRequest) {
     const expiry_date = formData.get('expiry_date') as string;
     // ✅ ADDED: Extract Extra Line field
     const extra_line = formData.get('extra_line') as string;
+    // ✅ ADDED: Extract font size and adjustment fields
+    const address_font_size = formData.get('address_font_size') as string;
+    const address_adjustment = formData.get('address_adjustment') as string;
+    const scope_font_size = formData.get('scope_font_size') as string;
+    const scope_adjustment = formData.get('scope_adjustment') as string;
+    const name_font_size = formData.get('name_font_size') as string;
+    const name_adjustment = formData.get('name_adjustment') as string;
     const logo = formData.get('logo') as string;
 
     // ✅ ADDED: Extract logo files from form data
@@ -65,6 +72,12 @@ export async function POST(request: NextRequest) {
     pythonFormData.append('surveillance_due_date', surveillance_due_date || '');
     pythonFormData.append('expiry_date', expiry_date || '');
     pythonFormData.append('extra_line', extra_line || '');  // ✅ ADDED: Send Extra Line to Python service
+    pythonFormData.append('address_font_size', address_font_size || '');  // ✅ ADDED: Send Address font size to Python service
+    pythonFormData.append('address_adjustment', address_adjustment || '');  // ✅ ADDED: Send Address adjustment to Python service
+    pythonFormData.append('scope_font_size', scope_font_size || '');  // ✅ ADDED: Send Scope font size to Python service
+    pythonFormData.append('scope_adjustment', scope_adjustment || '');  // ✅ ADDED: Send Scope adjustment to Python service
+    pythonFormData.append('name_font_size', name_font_size || '');  // ✅ ADDED: Send Name font size to Python service
+    pythonFormData.append('name_adjustment', name_adjustment || '');  // ✅ ADDED: Send Name adjustment to Python service
     pythonFormData.append('logo', logo || '');
 
     // Add logo files to the FormData for the Python service

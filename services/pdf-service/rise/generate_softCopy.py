@@ -565,6 +565,40 @@ def render_optional_fields(page, values, key_coords, value_coords, font_settings
     }
 
 
+def parse_excel_adjustment(value):
+    """Parse Excel adjustment value (e.g., '1', '-1', '+2') to float."""
+    if not value or value.strip() == '':
+        return 0
+    value = value.strip()
+    if value.startswith('-'):
+        try:
+            return -float(value[1:])
+        except ValueError:
+            return 0
+    if value.startswith('+'):
+        value = value[1:]
+    try:
+        return float(value)
+    except ValueError:
+        return 0
+
+def parse_excel_font_size(value):
+    """Parse Excel font size adjustment value (e.g., '1', '-1', '+2') to float."""
+    if not value or value.strip() == '':
+        return 0
+    value = value.strip()
+    if value.startswith('-'):
+        try:
+            return -float(value[1:])
+        except ValueError:
+            return 0
+    if value.startswith('+'):
+        value = value[1:]
+    try:
+        return float(value)
+    except ValueError:
+        return 0
+
 def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str, str], template_type: str = "standard", mode: str = "softcopy") -> Dict[str, any]:
     """
     Generate PDF with unified logic for both softcopy and printable modes.
@@ -757,13 +791,37 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
     
     # Process logo if specified and available
     logo_image = None
-    if logo_filename and logo_lookup and logo_filename in logo_lookup:
+    if logo_lookup and len(logo_lookup) > 0:
         try:
             # Convert uploaded file to PIL Image
             from PIL import Image
             import io
             
-            logo_file = logo_lookup[logo_filename]
+            # Use exact match if available, otherwise try partial match, otherwise use first available
+            logo_file = None
+            if logo_filename and logo_filename in logo_lookup:
+                logo_file = logo_lookup[logo_filename]
+                print(f"🔍 [SOFTCOPY] Using exact logo match: {logo_filename}")
+            elif logo_filename:
+                # Try partial match (filename without extension)
+                for filename, file in logo_lookup.items():
+                    if logo_filename in filename or filename.split('.')[0] == logo_filename:
+                        logo_file = file
+                        print(f"🔍 [SOFTCOPY] Using partial logo match: '{logo_filename}' → '{filename}'")
+                        break
+            
+            if not logo_file:
+                # Use first available logo file, but check if it's a valid image format
+                for filename, file in logo_lookup.items():
+                    # Check if file has valid image extension
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+                        logo_file = file
+                        print(f"🔍 [SOFTCOPY] Using first valid image file: {filename}")
+                        break
+                
+                if not logo_file:
+                    print(f"⚠️ [SOFTCOPY] No valid image files found in logo_lookup: {list(logo_lookup.keys())}")
+            
             if hasattr(logo_file, 'file'):
                 # Reset file pointer
                 logo_file.file.seek(0)
@@ -771,12 +829,16 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 logo_content = logo_file.file.read()
                 # Convert to PIL Image
                 logo_image = Image.open(io.BytesIO(logo_content))
+                print(f"✅ [SOFTCOPY] Logo image loaded successfully")
             else:
                 logo_image = None
+                print(f"⚠️ [SOFTCOPY] Logo file has no file attribute")
         except Exception as logo_error:
             logo_image = None
+            print(f"❌ [SOFTCOPY] Error loading logo image: {logo_error}")
     else:
         logo_image = None
+        print(f"🔍 [SOFTCOPY] No logo to process: logo_filename='{logo_filename}', logo_lookup_count={len(logo_lookup) if logo_lookup else 0}")
 
     # Standard template coordinates
     standard_coords = {
@@ -1141,7 +1203,19 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             else:
                 # Default logic: always center unless Excel column specifies otherwise
                 address_alignment = "center"  # Default: always center
-                print(f"🔍 [SOFTCOPY] Address: No Excel column value - using CENTERED alignment (default)")
+            
+            # Γ£à ADDED: Extract Excel adjustment and font size values     
+            name_adjustment_raw = values.get("Name Adjustment", "")
+            name_font_size_raw = values.get("Name Font Size", "")
+            address_adjustment_raw = values.get("Address Adjustment", "")
+            address_font_size_raw = values.get("Address Font Size", "")
+            
+            
+            name_adjustment = parse_excel_adjustment(name_adjustment_raw)
+            name_font_size_adjustment = parse_excel_font_size(name_font_size_raw)
+            address_adjustment = parse_excel_adjustment(address_adjustment_raw)
+            address_font_size_adjustment = parse_excel_font_size(address_font_size_raw)
+            
 
            
 
@@ -1168,6 +1242,10 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             
             address_font_size = 13.6
             print(f"🔍 [SOFTCOPY DEBUG] Address starting font size: {address_font_size}pt")
+            
+            # ✅ ADDED: Apply Excel font size adjustments
+            company_font_size += name_font_size_adjustment
+            address_font_size += address_font_size_adjustment
             
             # Variables to store the final wrapped lines and font sizes
             final_company_lines = []
@@ -1518,7 +1596,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 print(f"🔍 [SOFTCOPY DEBUG] Total height: {total_height:.1f}pt")
 
                 # No top margin - start at exact rectangle top
-                start_y = rect.y0  # Start at exact top of box
+                start_y = rect.y0 + name_adjustment  # Start at exact top of box + Excel adjustment
 
 
                 # Render Company Name first (starts from top)
@@ -1615,7 +1693,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                             y_pos = current_y
                         else:
                             # Single-line address: keep baseline centering with compensation
-                            y_pos = current_y + (line_height / 2) - (company_font_size * 0.2)  # Centered + compensation
+                                y_pos = current_y + (line_height / 2) - (company_font_size * 0.2) + address_adjustment  # Centered + compensation + Excel adjustment
                         
                         # ✅ ADDED: Dynamic alignment based on address line count
                         if address_alignment == "center":
@@ -1726,9 +1804,12 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             center_x = (management_rect.x0 + management_rect.x1) / 2
             center_y = (management_rect.y0 + management_rect.y1) / 2 + 15/3  # Adjust for baseline
 
+            # Determine font size: 12pt for Spanish + ISO 45001, otherwise 15pt
+            management_font_size = 12 if (language == "s" and "45001" in expanded_text) else 15
+            
             # Calculate text width for centering
             font_obj = fitz.Font(fontname="Times-BoldItalic")  # Use bold italic font
-            text_width = font_obj.text_length(management_line, 15)
+            text_width = font_obj.text_length(management_line, management_font_size)
             start_x = center_x - text_width / 2
 
             # Insert the management system text
@@ -1736,7 +1817,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 page,
                 (start_x, center_y),
                 management_line,
-                fontsize=15,
+                fontsize=management_font_size,
                 fontname="Times-BoldItalic", # Bold italic font
                 color=(0, 0, 0)  # Black color
             )
@@ -1853,6 +1934,14 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             # Scope text now uses justification (left and right alignment) for professional appearance
             rect = coords["Scope"]
             
+            # ✅ ADDED: Extract Excel adjustment and font size values for Scope
+            scope_adjustment_raw = values.get("Scope Adjustment", "")
+            scope_font_size_raw = values.get("Scope Font Size", "")
+            
+            
+            scope_adjustment = parse_excel_adjustment(scope_adjustment_raw)
+            scope_font_size_adjustment = parse_excel_font_size(scope_font_size_raw)
+            
             
             # Template-specific starting font size for Scope
             if template_type == "standard" and scope_layout == "short":
@@ -1860,7 +1949,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             else:
                 start_size = font_starts.get("Scope", 20)  # Large template or standard long scope: max 20pt
             
-            font_size = start_size
+            font_size = start_size + scope_font_size_adjustment  # ✅ ADDED: Apply Excel font size adjustment
             iteration_count = 0
 
             # Reduce font size if it doesn't fit, but ensure minimum size
@@ -1943,8 +2032,8 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                         current_line = ""
                         
                         for word in words:
-                            # Check if word starts with bullet point indicators
-                            is_bullet_point = any(word.startswith(indicator) for indicator in ['-', '•', '>', '→', '▪', '▫', '*'])
+                            # Check if word starts with bullet point indicators (excluding '-' as per user request)
+                            is_bullet_point = any(word.startswith(indicator) for indicator in ['•', '>', '→', '▪', '▫', '*'])
                             
                             # If it's a bullet point and we have content, start a new line
                             if is_bullet_point and current_line:
@@ -1996,7 +2085,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                     current_line = ""
                     
                     for word in words:
-                        is_bullet_point = any(word.startswith(indicator) for indicator in ['-', '•', '>', '→', '▪', '▫', '*'])
+                        is_bullet_point = any(word.startswith(indicator) for indicator in ['•', '>', '→', '▪', '▫', '*'])
                         
                         if is_bullet_point and current_line:
                             lines.append(current_line)
@@ -2094,7 +2183,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             
             if template_type in ["large", "large_eco", "large_nonaccredited"]:
                 # Large template: start from top with no margin
-                start_y = rect.y0
+                start_y = rect.y0 + scope_adjustment  # Start at exact top of box + Excel adjustment
                 
                 # Check if text would overflow bottom
                 if start_y + total_height > rect.y1:
@@ -2102,7 +2191,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                     start_y = rect.y1 - total_height - 1  # 1pt margin from bottom
             else:
                 # Standard template: keep current centering logic
-                start_y = rect.y0 + (rect.height - total_height) / 2 + line_height/2  # Adjust for baseline
+                start_y = rect.y0 + (rect.height - total_height) / 2 + line_height/2 + scope_adjustment  # Adjust for baseline + Excel adjustment
             
             # Debug output for line break processing
             has_line_breaks = '\n' in text
@@ -2266,16 +2355,17 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
         except Exception as e:
             print(f"❌ [SOFTCOPY] Error inserting logo: {e}")
 
-    # ✅ UPDATED: Insert logo if available and using logo template
-    if logo_image and template_type == "logo":
+    # ✅ UPDATED: Insert logo if available and using any logo template type
+    if logo_image and template_type.startswith("logo"):
         try:
             # Get logo coordinates from logo_coords
             logo_rect = logo_coords.get("logo")
             if logo_rect:
                 # Use the new shared logo function
                 insert_logo_with_smart_positioning(page, logo_image, logo_rect)
+                print(f"✅ [SOFTCOPY] Logo inserted for template type: {template_type}")
             else:
-                print("⚠️ [SOFTCOPY] Logo coordinates not found in logo_coords")
+                print(f"⚠️ [SOFTCOPY] Logo coordinates not found in logo_coords for template: {template_type}")
         except Exception as logo_insert_error:
             print(f"❌ [SOFTCOPY] Error inserting logo: {logo_insert_error}")
 

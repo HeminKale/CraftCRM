@@ -2,6 +2,52 @@ from docx import Document
 import fitz  # PyMuPDF
 from typing import Dict
 
+def parse_excel_adjustment(value):
+    """Parse Excel adjustment value (e.g., '-1', '+2', '3', '') and return numeric value."""
+    if not value or value.strip() == '':
+        return 0
+    
+    value = value.strip()
+    
+    # Handle negative values
+    if value.startswith('-'):
+        try:
+            return -float(value[1:])
+        except ValueError:
+            return 0
+    
+    # Handle positive values (with or without +)
+    if value.startswith('+'):
+        value = value[1:]
+    
+    try:
+        return float(value)
+    except ValueError:
+        return 0
+
+def parse_excel_font_size(value):
+    """Parse Excel font size value (e.g., '-1', '+2', '3', '') and return numeric value."""
+    if not value or value.strip() == '':
+        return 0
+    
+    value = value.strip()
+    
+    # Handle negative values
+    if value.startswith('-'):
+        try:
+            return -float(value[1:])
+        except ValueError:
+            return 0
+    
+    # Handle positive values (with or without +)
+    if value.startswith('+'):
+        value = value[1:]
+    
+    try:
+        return float(value)
+    except ValueError:
+        return 0
+
 def safe_insert_text(page, position, text, **kwargs):
     """Safely insert text handling Unicode characters that might cause ByteString errors."""
     try:
@@ -791,26 +837,54 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
     
     # Process logo if specified and available
     logo_image = None
-    if logo_filename and logo_lookup and logo_filename in logo_lookup:
+    if logo_lookup and len(logo_lookup) > 0:
         try:
             # Convert uploaded file to PIL Image
             from PIL import Image
             import io
             
-            logo_file = logo_lookup[logo_filename]
-            if hasattr(logo_file, 'file'):
+            # Use exact match if available, otherwise try partial match, otherwise use first available
+            logo_file = None
+            if logo_filename and logo_filename in logo_lookup:
+                logo_file = logo_lookup[logo_filename]
+                print(f"🔍 [CERTIFICATE] Using exact logo match: {logo_filename}")
+            elif logo_filename:
+                # Try partial match (filename without extension)
+                for filename, file in logo_lookup.items():
+                    if logo_filename in filename or filename.split('.')[0] == logo_filename:
+                        logo_file = file
+                        print(f"🔍 [CERTIFICATE] Using partial logo match: '{logo_filename}' → '{filename}'")
+                        break
+            
+            if not logo_file:
+                # Use first available logo file, but check if it's a valid image format
+                for filename, file in logo_lookup.items():
+                    # Check if file has valid image extension
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+                        logo_file = file
+                        print(f"🔍 [CERTIFICATE] Using first valid image file: {filename}")
+                        break
+                
+                if not logo_file:
+                    print(f"⚠️ [CERTIFICATE] No valid image files found in logo_lookup: {list(logo_lookup.keys())}")
+            
+            if logo_file and hasattr(logo_file, 'file'):
                 # Reset file pointer
                 logo_file.file.seek(0)
                 # Read file content
                 logo_content = logo_file.file.read()
                 # Convert to PIL Image
                 logo_image = Image.open(io.BytesIO(logo_content))
+                print(f"✅ [CERTIFICATE] Logo image loaded successfully")
             else:
                 logo_image = None
+                print(f"⚠️ [CERTIFICATE] Logo file has no file attribute or is None")
         except Exception as logo_error:
             logo_image = None
+            print(f"❌ [CERTIFICATE] Error loading logo image: {logo_error}")
     else:
         logo_image = None
+        print(f"🔍 [CERTIFICATE] No logo to process: logo_filename='{logo_filename}', logo_lookup_count={len(logo_lookup) if logo_lookup else 0}")
     
     # Standard template coordinates (current)
     standard_coords = {
@@ -1342,6 +1416,11 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             address_text = values.get("Address", "")
             safe_address_text = str(address_text) if address_text is not None else ""
             
+            # ✅ ADDED: Extract Excel adjustment and font size values
+            name_adjustment = parse_excel_adjustment(values.get("Name Adjustment", ""))
+            name_font_size_adjustment = parse_excel_font_size(values.get("Name Font Size", ""))
+            address_adjustment = parse_excel_adjustment(values.get("Address Adjustment", ""))
+            address_font_size_adjustment = parse_excel_font_size(values.get("Address Font Size", ""))
 
 
             
@@ -1430,6 +1509,10 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                 print(f"🔍 [CERTIFICATE] Company Name: {company_lines_count} lines detected, starting with {company_font_size}pt")
             
             address_font_size = 13.6
+            
+            # ✅ ADDED: Apply Excel font size adjustments
+            company_font_size += name_font_size_adjustment
+            address_font_size += address_font_size_adjustment
             
             # Variables to store the final wrapped lines and font sizes
             final_company_lines = []
@@ -1631,7 +1714,7 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
 
                 
                 # No top margin - start at exact rectangle top
-                start_y = rect.y0  # Start at exact top of box
+                start_y = rect.y0 + name_adjustment  # Start at exact top of box + Excel adjustment
 
                 
                 # Render Company Name first (starts from top)
@@ -1702,10 +1785,10 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                     # Apply compensation for single-line address regardless of company line count
                     if has_multiple_address_lines:
                         # Multi-line address: no baseline centering, no compensation
-                        y_pos = current_y
+                        y_pos = current_y + address_adjustment  # Excel adjustment only
                     else:
                         # Single-line address: keep baseline centering with compensation
-                        y_pos = current_y + (line_height / 2) - (company_font_size * 0.2)  # Centered + compensation
+                        y_pos = current_y + (line_height / 2) - (company_font_size * 0.2) + address_adjustment  # Centered + compensation + Excel adjustment
                     
                     # ✅ ADDED: Dynamic alignment based on address line count
                     if address_alignment == "center":
@@ -1817,19 +1900,20 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             center_x = (management_rect.x0 + management_rect.x1) / 2
             center_y = (management_rect.y0 + management_rect.y1) / 2 + 15/3  # Adjust for baseline
             
+            # Determine font size: 12pt for Spanish + ISO 45001, otherwise 15pt
+            management_font_size = 12 if (language == "s" and "45001" in expanded_iso) else 15
+            
             # Calculate text width for centering
             font_obj = fitz.Font(fontname="Times-BoldItalic")  # Use bold italic font
-            text_width = font_obj.text_length(management_line, 15)
+            text_width = font_obj.text_length(management_line, management_font_size)
             start_x = center_x - text_width / 2
-            
-
             
             # Insert the management system text
             safe_insert_text(
                 page,
                 (start_x, center_y),
                 management_line,
-                fontsize=15,
+                fontsize=management_font_size,
                 fontname="Times-BoldItalic", # Bold italic font
                 color=(0, 0, 0)  # Black color
             )
@@ -1884,15 +1968,12 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
 
         
         if field == "Scope":
+            # ✅ ADDED: Extract Excel adjustment and font size values for Scope
+            scope_adjustment = parse_excel_adjustment(values.get("Scope Adjustment", ""))
+            scope_font_size_adjustment = parse_excel_font_size(values.get("Scope Font Size", ""))
+            
             # PowerPoint-style centering with automatic font size reduction
             original_font_size = font_size
-            
-            # 🔍 [CERTIFICATE DEBUG] Scope processing start
-            print(f"🔍 [CERTIFICATE DEBUG] ===== SCOPE ANALYSIS START =====")
-            print(f"🔍 [CERTIFICATE DEBUG] Template type: {template_type}")
-            print(f"🔍 [CERTIFICATE DEBUG] Scope coordinates: {rect}")
-            print(f"🔍 [CERTIFICATE DEBUG] Scope text length: {len(text)} characters")
-            print(f"🔍 [CERTIFICATE DEBUG] Scope text preview: '{text[:100]}{'...' if len(text) > 100 else ''}'")
             
             # ✅ ENHANCED: Optimized font calculation that prioritizes line break boundaries
             def calculate_optimal_font_size_with_line_breaks(text, rect, fontname, template_type, min_font_size=4):
@@ -1960,8 +2041,8 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                         current_line = ""
                         
                         for word in words:
-                            # Check if word starts with bullet point indicators
-                            is_bullet_point = any(word.startswith(indicator) for indicator in ['-', '•', '>', '→', '▪', '▫', '*'])
+                            # Check if word starts with bullet point indicators (excluding '-' as per user request)
+                            is_bullet_point = any(word.startswith(indicator) for indicator in ['•', '>', '→', '▪', '▫', '*'])
                             
                             # If it's a bullet point and we have content, start a new line
                             if is_bullet_point and current_line:
@@ -2017,7 +2098,7 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                     current_line = ""
                     
                     for word in words:
-                        is_bullet_point = any(word.startswith(indicator) for indicator in ['-', '•', '>', '→', '▪', '▫', '*'])
+                        is_bullet_point = any(word.startswith(indicator) for indicator in ['•', '>', '→', '▪', '▫', '*'])
                         
                         if is_bullet_point and current_line:
                             lines.append(current_line)
@@ -2056,6 +2137,9 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             # Use optimized font calculation
             min_font_size = 4  # Allow font size to go below 8pt if needed
             font_size, lines = calculate_optimal_font_size_with_line_breaks(text, rect, fontname, template_type, min_font_size)
+            
+            # ✅ ADDED: Apply Excel font size adjustment to scope
+            font_size += scope_font_size_adjustment
             
             # Calculate final total height for overflow checking
             if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
@@ -2117,33 +2201,20 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                 line_height = font_size * 1.2  # Loose spacing for standard templates
             total_height = len(lines) * line_height
             
-            print(f"🔍 [CERTIFICATE DEBUG] ===== POSITIONING ANALYSIS =====")
-            print(f"🔍 [CERTIFICATE DEBUG] Final font size: {font_size}pt")
-            print(f"🔍 [CERTIFICATE DEBUG] Final line height: {line_height:.1f}pt")
-            print(f"🔍 [CERTIFICATE DEBUG] Final total height: {total_height:.1f}pt")
-            print(f"🔍 [CERTIFICATE DEBUG] Scope rectangle: {rect}")
-            print(f"🔍 [CERTIFICATE DEBUG] Available height: {rect.height:.1f}pt")
             
             if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other"]:
                 # Large template: start from top with no margin
-                start_y = rect.y0
-                print(f"🔍 [CERTIFICATE DEBUG] Large template - Starting from top: y0={rect.y0}")
+                start_y = rect.y0 + scope_adjustment  # ✅ ADDED: Apply Excel positioning adjustment
                 
                 # Check if text would overflow bottom
                 if start_y + total_height > rect.y1:
                     # If overflow, adjust to fit within bounds
                     start_y = rect.y1 - total_height - 2  # 2pt margin from bottom
-                    print(f"🔍 [CERTIFICATE DEBUG] ⚠️ Overflow detected! Adjusted start_y to: {start_y:.1f}")
                 else:
-                    print(f"🔍 [CERTIFICATE DEBUG] ✅ No overflow - using original start_y: {start_y:.1f}")
+                    pass
             else:
                 # Standard template: keep current centering logic
-                start_y = rect.y0 + (rect.height - total_height) / 2 + line_height/2  # Adjust for baseline
-                print(f"🔍 [CERTIFICATE DEBUG] Standard template - Centered positioning: start_y={start_y:.1f}")
-            
-            print(f"🔍 [CERTIFICATE DEBUG] Final start_y: {start_y:.1f}")
-            print(f"🔍 [CERTIFICATE DEBUG] Text will end at: {start_y + total_height:.1f}")
-            print(f"🔍 [CERTIFICATE DEBUG] ===== END POSITIONING ANALYSIS =====")
+                start_y = rect.y0 + (rect.height - total_height) / 2 + line_height/2 + scope_adjustment  # Adjust for baseline + Excel adjustment
             
             # ✅ SIMPLIFIED: Scope rendering with consistent centering
             current_y = start_y
@@ -2441,8 +2512,8 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
     else:
         print(f"🔍 [CERTIFICATE] No Extra Line - skipping")
 
-    # ✅ ADDED: Insert logo if available and using logo template
-    if logo_image and template_type == "logo":
+    # ✅ ADDED: Insert logo if available and using any logo template type
+    if logo_image and template_type.startswith("logo"):
         try:
             # ✅ ADDED: Defensive check for logo_coords
             if logo_coords is None:
@@ -2451,11 +2522,11 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                 # Get logo coordinates from logo_coords
                 logo_rect = logo_coords.get("logo")
                 if logo_rect:
-                    # Use the new shared logo function for better handling
-                    insert_logo_into_pdf(page, logo_lookup[logo_filename], logo_rect)
-                    print(f"🔍 [CERTIFICATE] Logo inserted successfully using shared logo function")
+                    # Use the smart positioning function directly with the loaded logo_image
+                    insert_logo_with_smart_positioning(page, logo_image, logo_rect)
+                    print(f"✅ [CERTIFICATE] Logo inserted for template type: {template_type}")
                 else:
-                    print("⚠️ [CERTIFICATE] Logo coordinates not found in logo_coords")
+                    print(f"⚠️ [CERTIFICATE] Logo coordinates not found in logo_coords for template: {template_type}")
         except Exception as logo_insert_error:
             print(f"❌ [CERTIFICATE] Error inserting logo: {logo_insert_error}")
 
