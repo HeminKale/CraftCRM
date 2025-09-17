@@ -205,12 +205,19 @@ async def generate_certificate_endpoint(
         try:
             form_data = await request.form()
             logo_files = form_data.getlist("logo_files") if hasattr(form_data, 'getlist') else []
+            print(f"🔍 [CERTIFICATE] Received {len(logo_files)} logo files")
             
             # Create logo lookup dictionary
             for logo_file in logo_files:
                 if hasattr(logo_file, 'filename') and logo_file.filename:
                     logo_lookup[logo_file.filename] = logo_file
+                    print(f"🔍 [CERTIFICATE] Logo file: {logo_file.filename}")
+            
+            # Get logo field value for logging
+            logo = field_data.get("Logo", "").strip()
+            print(f"🔍 [CERTIFICATE] Logo field value: '{logo}'")
         except Exception as logo_error:
+            print(f"⚠️ [CERTIFICATE] Error extracting logo files: {logo_error}")
             logo_lookup = {}
         
         # Save uploaded file temporarily with appropriate extension
@@ -256,7 +263,17 @@ async def generate_certificate_endpoint(
                 
                 # Force large template based on other parameters
                 if country.lower() == "other":
-                    if accreditation == "no":
+                    # Use logo template if logo files are present OR logo field matches
+                    if len(logo_lookup) > 0 or (logo_filename and logo_filename in logo_lookup):
+                        # Logo templates for Other country
+                        if accreditation == "no":
+                            template_name = "templateDraftLogoNonAccOther"
+                            template_type = "logo_nonaccredited_other"
+                        else:
+                            template_name = "templateDraftLogoOther"
+                            template_type = "logo_other"
+                        print(f"🔍 [CERTIFICATE] Extra Line + Logo files present ({len(logo_lookup)} files) - using Other logo template")
+                    elif accreditation == "no":
                         template_name = "templateDraftLargeNonAccOther"
                         template_type = "large_nonaccredited_other"
                     elif size == "high":
@@ -266,13 +283,15 @@ async def generate_certificate_endpoint(
                         template_name = "template_draft_large_other_eco"
                         template_type = "large_other_eco"
                 else:  # Default country
-                    if logo_filename and logo_filename in logo_lookup:
+                    # Use logo template if logo files are present OR logo field matches
+                    if len(logo_lookup) > 0 or (logo_filename and logo_filename in logo_lookup):
                         if accreditation == "no":
                             template_name = "templateDraftLogoNonAcc"
                             template_type = "logo_nonaccredited"
                         else:
                             template_name = "templateDraftLogo"
                             template_type = "logo"
+                        print(f"🔍 [CERTIFICATE] Extra Line + Logo files present ({len(logo_lookup)} files) - using logo template")
                     elif accreditation == "no":
                         template_name = "templateDraftLargeNonAcc"
                         template_type = "large_nonaccredited"
@@ -289,7 +308,8 @@ async def generate_certificate_endpoint(
                 # ✅ EXISTING: Normal template selection logic
                 # ✅ ADDED: Country = "Other" template logic with logo templates
                 if country.lower() == "other":
-                    if logo_filename and logo_filename in logo_lookup:
+                    # Use logo template if logo files are present OR logo field matches
+                    if len(logo_lookup) > 0 or (logo_filename and logo_filename in logo_lookup):
                         # Logo templates for Other country
                         if accreditation == "no":
                             template_name = "templateDraftLogoNonAccOther"
@@ -297,6 +317,7 @@ async def generate_certificate_endpoint(
                         else:
                             template_name = "templateDraftLogoOther"
                             template_type = "logo_other"
+                        print(f"🔍 [CERTIFICATE] Logo files present ({len(logo_lookup)} files) - using Other logo template")
                     elif accreditation == "no":
                         # Non-accredited templates for Other country
                         if estimated_lines <= 11:
@@ -325,7 +346,8 @@ async def generate_certificate_endpoint(
                             template_type = "large_other_eco"
                 else:
                     # ✅ ADDED: Logo handling logic (applies to both blank and Other country)
-                    if logo_filename and logo_filename in logo_lookup:
+                    # Use logo template if logo files are present OR logo field matches
+                    if len(logo_lookup) > 0 or (logo_filename and logo_filename in logo_lookup):
                         # Logo templates take priority - single template regardless of content length
                         if accreditation == "no":
                             template_name = "templateDraftLogoNonAcc"
@@ -333,6 +355,7 @@ async def generate_certificate_endpoint(
                         else:
                             template_name = "templateDraftLogo"
                             template_type = "logo"
+                        print(f"🔍 [CERTIFICATE] Logo files present ({len(logo_lookup)} files) - using logo template")
                     elif logo_filename and logo_filename not in logo_lookup:
                         print(f"⚠️ [CERTIFICATE] Logo specified but file not found: {logo_filename} - using regular template")
                         # Continue with regular template selection logic
@@ -555,6 +578,22 @@ async def generate_softcopy_endpoint(
                     # Reset file pointer for later use
                     if hasattr(logo_file.file, 'seek'):
                         logo_file.file.seek(0)
+            
+            # ✅ ADDED: Debug logo matching logic with filename normalization
+            if logo and logo.strip():
+                if logo in logo_lookup:
+                    print(f"✅ [SOFTCOPY] Logo '{logo}' found in logo_lookup")
+                elif len(logo_lookup) > 0:
+                    print(f"⚠️ [SOFTCOPY] Logo '{logo}' not in logo_lookup, but {len(logo_lookup)} files available: {list(logo_lookup.keys())}")
+                    # Try to find partial match (filename without extension)
+                    for filename in logo_lookup.keys():
+                        if logo in filename or filename.split('.')[0] == logo:
+                            print(f"✅ [SOFTCOPY] Found partial match: '{logo}' matches '{filename}'")
+                            break
+                else:
+                    print(f"⚠️ [SOFTCOPY] Logo '{logo}' specified but no logo files received")
+            elif len(logo_lookup) > 0:
+                print(f"🔍 [SOFTCOPY] Logo field empty but {len(logo_lookup)} logo files available: {list(logo_lookup.keys())}")
         except Exception as logo_error:
             print(f"⚠️ [SOFTCOPY] Error extracting logo files: {logo_error}")
             logo_lookup = {}
@@ -612,6 +651,14 @@ async def generate_softcopy_endpoint(
         # ✅ ADDED: Add Language field to field data
         field_data["Language"] = language
         
+        # ✅ ADDED: Add Excel adjustment fields to field_data
+        field_data["Name Font Size"] = soft_copy_data.get("Name Font Size", "")
+        field_data["Name Adjustment"] = soft_copy_data.get("Name Adjustment", "")
+        field_data["Address Font Size"] = soft_copy_data.get("Address Font Size", "")
+        field_data["Address Adjustment"] = soft_copy_data.get("Address Adjustment", "")
+        field_data["Scope Font Size"] = soft_copy_data.get("Scope Font Size", "")
+        field_data["Scope Adjustment"] = soft_copy_data.get("Scope Adjustment", "")
+        
         
         # Determine template path and type
         if template:
@@ -644,7 +691,8 @@ async def generate_softcopy_endpoint(
                 
                 # Force large template based on other parameters
                 if country.lower() == "other":
-                    if logo and logo.strip() and logo in logo_lookup:
+                    # Use logo template if logo files are present OR logo field matches
+                    if len(logo_lookup) > 0 or (logo and logo.strip() and logo in logo_lookup):
                         # Logo templates for Other country
                         if accreditation == "no":
                             template_name = "templateSoftCopyLogoOtherNonAcc"
@@ -652,6 +700,7 @@ async def generate_softcopy_endpoint(
                         else:
                             template_name = "templateSoftCopyLogoOther"
                             template_type = "logo_other"
+                        print(f"🔍 [SOFTCOPY] Extra Line + Logo files present ({len(logo_lookup)} files) - using Other logo template")
                     elif accreditation == "no":
                         template_name = "templateSoftCopyLargeNonAccOther"
                         template_type = "large_nonaccredited_other"
@@ -662,7 +711,8 @@ async def generate_softcopy_endpoint(
                         template_name = "template_softCopy_large_other_eco"
                         template_type = "large_other_eco"
                 else:  # Default country
-                    if logo and logo.strip() and logo in logo_lookup:
+                    # Use logo template if logo files are present OR logo field matches
+                    if len(logo_lookup) > 0 or (logo and logo.strip() and logo in logo_lookup):
                         # Logo templates for Default country
                         if accreditation == "no":
                             template_name = "templateSoftCopyLogoNonAcc"
@@ -687,7 +737,8 @@ async def generate_softcopy_endpoint(
                 # ✅ UPDATED: Template selection logic with Country parameter (simplified - no separate logo templates)
                 if country.lower() == "other":
                     # Country = "Other" template logic
-                    if logo and logo.strip() and logo in logo_lookup:
+                    # Use logo template if logo files are present OR logo field matches
+                    if len(logo_lookup) > 0 or (logo and logo.strip() and logo in logo_lookup):
                         # Logo templates for Other country
                         if accreditation == "no":
                             template_name = "templateSoftCopyLogoOtherNonAcc"
@@ -695,6 +746,7 @@ async def generate_softcopy_endpoint(
                         else:
                             template_name = "templateSoftCopyLogoOther"
                             template_type = "logo_other"
+                        print(f"🔍 [SOFTCOPY] Logo files present ({len(logo_lookup)} files) - using Other logo template")
                     elif accreditation == "no":
                         # Non-accredited templates for Other country
                         if estimated_lines <= 11:
@@ -721,7 +773,8 @@ async def generate_softcopy_endpoint(
                             template_type = "large_other_eco"
                 else:
                     # ✅ ADDED: Logo handling logic (applies to both blank and Other country)
-                    if logo and logo.strip() and logo in logo_lookup:
+                    # Use logo template if logo files are present OR logo field matches
+                    if len(logo_lookup) > 0 or (logo and logo.strip() and logo in logo_lookup):
                         # Logo templates take priority - single template regardless of content length
                         if accreditation == "no":
                             template_name = "templateSoftCopyLogoNonAcc"
@@ -729,7 +782,7 @@ async def generate_softcopy_endpoint(
                         else:
                             template_name = "templateSoftCopyLogo"
                             template_type = "logo"
-                        print(f"🔍 [SOFTCOPY] Logo file found: {logo} - using logo template")
+                        print(f"🔍 [SOFTCOPY] Logo files present ({len(logo_lookup)} files) - using logo template")
                     elif logo and logo.strip() and logo not in logo_lookup:
                         print(f"⚠️ [SOFTCOPY] Logo specified but file not found: {logo} - using regular template")
                     elif accreditation == "no":
@@ -1272,7 +1325,17 @@ async def generate_certificate_json_endpoint(
             
             # Force large template based on other parameters
             if country.lower() == "other":
-                if accreditation == "no":
+                # Use logo template if logo files are present OR logo field matches
+                if len(logo_lookup) > 0 or (logo_filename and logo_filename in logo_lookup):
+                    # Logo templates for Other country
+                    if accreditation == "no":
+                        template_name = "templateDraftLogoNonAccOther"
+                        template_type = "logo_nonaccredited_other"
+                    else:
+                        template_name = "templateDraftLogoOther"
+                        template_type = "logo_other"
+                    print(f"🔍 [CERTIFICATE-JSON] Extra Line + Logo files present ({len(logo_lookup)} files) - using Other logo template")
+                elif accreditation == "no":
                     template_name = "templateDraftLargeNonAccOther"
                     template_type = "large_nonaccredited_other"
                 elif size == "high":
@@ -1299,7 +1362,17 @@ async def generate_certificate_json_endpoint(
         else:
             # Regular template selection logic (same as main endpoint)
             if country.lower() == "other":
-                if accreditation == "no":
+                # Use logo template if logo files are present OR logo field matches
+                if len(logo_lookup) > 0 or (logo_filename and logo_filename in logo_lookup):
+                    # Logo templates for Other country
+                    if accreditation == "no":
+                        template_name = "templateDraftLogoNonAccOther"
+                        template_type = "logo_nonaccredited_other"
+                    else:
+                        template_name = "templateDraftLogoOther"
+                        template_type = "logo_other"
+                    print(f"🔍 [CERTIFICATE-JSON] Logo files present ({len(logo_lookup)} files) - using Other logo template")
+                elif accreditation == "no":
                     # Non-accredited templates for Other country
                     if estimated_lines <= 11:
                         template_name = "templateDraftStandardNonAccOther"

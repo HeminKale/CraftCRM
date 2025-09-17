@@ -51,6 +51,12 @@ interface SoftCopyGenerationData {
   "Extra Line": string;
   "Country": string;  // ✅ ADDED: Country field support
   "Language": string;  // ✅ ADDED: Language field support
+  "Address Font Size": string;  // ✅ ADDED: Address font size field (1, -1 text format)
+  "Address Adjustment": string;  // ✅ ADDED: Address adjustment field (1, -1 text format)
+  "Scope Font Size": string;  // ✅ ADDED: Scope font size field (1, -2 text format)
+  "Scope Adjustment": string;  // ✅ ADDED: Scope adjustment field (1, -1 text format)
+  "Name Font Size": string;  // ✅ ADDED: Name font size field (1, -1 text format)
+  "Name Adjustment": string;  // ✅ ADDED: Name adjustment field (1, -1 text format)
 }
 
 interface CertificateRecord {
@@ -111,6 +117,12 @@ function ClientSoftCopyGenerator({ recordId, objectId, tenantId, recordData, sel
     addressAlignment: 'center',  // ✅ ADDED: Address alignment support
     country: '',  // ✅ ADDED: Country field support
     language: '',  // ✅ ADDED: Language field support
+    addressFontSize: '',  // ✅ ADDED: Address font size field
+    addressAdjustment: '',  // ✅ ADDED: Address adjustment field
+    scopeFontSize: '',  // ✅ ADDED: Scope font size field
+    scopeAdjustment: '',  // ✅ ADDED: Scope adjustment field
+    nameFontSize: '',  // ✅ ADDED: Name font size field
+    nameAdjustment: '',  // ✅ ADDED: Name adjustment field
   });
 
   // Get tenant context
@@ -410,6 +422,12 @@ function ClientSoftCopyGenerator({ recordId, objectId, tenantId, recordData, sel
       "Extra Line": formData.extraLine,
       "Country": formData.country || "",  // ✅ ADDED: Country field support
       "Language": formData.language || "",  // ✅ ADDED: Language field support
+      "Address Font Size": formData.addressFontSize || "",  // ✅ ADDED: Address font size field
+      "Address Adjustment": formData.addressAdjustment || "",  // ✅ ADDED: Address adjustment field
+      "Scope Font Size": formData.scopeFontSize || "",  // ✅ ADDED: Scope font size field
+      "Scope Adjustment": formData.scopeAdjustment || "",  // ✅ ADDED: Scope adjustment field
+      "Name Font Size": formData.nameFontSize || "",  // ✅ ADDED: Name font size field
+      "Name Adjustment": formData.nameAdjustment || "",  // ✅ ADDED: Name adjustment field
     };
   };
 
@@ -436,6 +454,12 @@ function ClientSoftCopyGenerator({ recordId, objectId, tenantId, recordData, sel
       "Extra Line": formData.extraLine,
       "Country": formData.country || "",  // ✅ ADDED: Country field support
       "Language": formData.language || "",  // ✅ ADDED: Language field support
+      "Address Font Size": formData.addressFontSize || "",  // ✅ ADDED: Address font size field
+      "Address Adjustment": formData.addressAdjustment || "",  // ✅ ADDED: Address adjustment field
+      "Scope Font Size": formData.scopeFontSize || "",  // ✅ ADDED: Scope font size field
+      "Scope Adjustment": formData.scopeAdjustment || "",  // ✅ ADDED: Scope adjustment field
+      "Name Font Size": formData.nameFontSize || "",  // ✅ ADDED: Name font size field
+      "Name Adjustment": formData.nameAdjustment || "",  // ✅ ADDED: Name adjustment field
     };
   };
 
@@ -1023,6 +1047,78 @@ function ClientSoftCopyGenerator({ recordId, objectId, tenantId, recordData, sel
                 <option value="">(Blank)</option>
                 <option value="S">S</option>
               </select>
+            </div>
+
+            {/* Address Font Size */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Address Font Size</label>
+              <input
+                type="text"
+                value={formData.addressFontSize}
+                onChange={(e) => handleFormDataChange('addressFontSize', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="e.g., 1, -1 (text format)"
+              />
+            </div>
+
+            {/* Address Adjustment */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Address Adjustment</label>
+              <input
+                type="text"
+                value={formData.addressAdjustment}
+                onChange={(e) => handleFormDataChange('addressAdjustment', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="e.g., 1, -1 (text format)"
+              />
+            </div>
+
+            {/* Scope Font Size */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Scope Font Size</label>
+              <input
+                type="text"
+                value={formData.scopeFontSize}
+                onChange={(e) => handleFormDataChange('scopeFontSize', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="e.g., 1, -2 (text format)"
+              />
+            </div>
+
+            {/* Scope Adjustment */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Scope Adjustment</label>
+              <input
+                type="text"
+                value={formData.scopeAdjustment}
+                onChange={(e) => handleFormDataChange('scopeAdjustment', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="e.g., 1, -1 (text format)"
+              />
+            </div>
+
+            {/* Name Font Size */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Name Font Size</label>
+              <input
+                type="text"
+                value={formData.nameFontSize}
+                onChange={(e) => handleFormDataChange('nameFontSize', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="e.g., 1, -1 (text format)"
+              />
+            </div>
+
+            {/* Name Adjustment */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Name Adjustment</label>
+              <input
+                type="text"
+                value={formData.nameAdjustment}
+                onChange={(e) => handleFormDataChange('nameAdjustment', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="e.g., 1, -1 (text format)"
+              />
             </div>
           </div>
         </div>

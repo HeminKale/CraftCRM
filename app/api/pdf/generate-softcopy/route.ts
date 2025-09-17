@@ -65,6 +65,13 @@ export async function POST(request: NextRequest) {
       "Country": jsonData["Country"]?.trim() || '',
       "Extra Line": jsonData["Extra Line"]?.trim() || '',
       "Language": jsonData["Language"]?.trim() || '',  // ✅ ADDED: Language field
+      // ✅ ADDED: 6 new Excel adjustment fields
+      "Name Font Size": jsonData["Name Font Size"]?.trim() || '',
+      "Name Adjustment": jsonData["Name Adjustment"]?.trim() || '',
+      "Address Font Size": jsonData["Address Font Size"]?.trim() || '',
+      "Address Adjustment": jsonData["Address Adjustment"]?.trim() || '',
+      "Scope Font Size": jsonData["Scope Font Size"]?.trim() || '',
+      "Scope Adjustment": jsonData["Scope Adjustment"]?.trim() || '',
       // ✅ ADDED: Pass logo files to Python service
       logo_lookup: logoLookup
     };
@@ -96,6 +103,11 @@ export async function POST(request: NextRequest) {
     // Create form data for Python service
     const pythonFormData = new FormData();
     pythonFormData.append('data', JSON.stringify(softCopyData));
+    
+    // ✅ ADDED: Forward logo files to Python service
+    logoFiles.forEach(file => {
+      pythonFormData.append('logo_files', file);
+    });
 
     const response = await fetch(`${pdfServiceUrl}/generate-softcopy`, {
       method: 'POST',

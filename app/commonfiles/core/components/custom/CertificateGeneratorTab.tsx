@@ -736,7 +736,15 @@ export default function CertificateGeneratorTab({ tabId, tabLabel }: Certificate
         'Address alignment': extractedFieldsObject['Address alignment'] || extractedFieldsObject['Address Alignment'] || '',
         
         // ✅ ADDED: Extra line field (same as Excel flow)
-        'Extra line': extractedFieldsObject['Extra line'] || extractedFieldsObject['Extra Line'] || ''
+        'Extra line': extractedFieldsObject['Extra line'] || extractedFieldsObject['Extra Line'] || '',
+        
+        // ✅ ADDED: Font size and adjustment fields
+        'Address Font Size': extractedFieldsObject['Address Font Size'] || '',
+        'Address Adjustment': extractedFieldsObject['Address Adjustment'] || '',
+        'Scope Font Size': extractedFieldsObject['Scope Font Size'] || '',
+        'Scope Adjustment': extractedFieldsObject['Scope Adjustment'] || '',
+        'Name Font Size': extractedFieldsObject['Name Font Size'] || '',
+        'Name Adjustment': extractedFieldsObject['Name Adjustment'] || ''
       };
       
       console.log('🔍 [WORD-FLOW] Processed fields object created:', {

@@ -21,6 +21,12 @@ interface ExcelRow {
   "Country"?: string;  // ✅ ADDED: Country field
   "Extra Line"?: string;  // ✅ ADDED: Extra Line field
   "Language"?: string;  // ✅ ADDED: Language field (S or blank)
+  "Address Font Size"?: string;  // ✅ ADDED: Address font size field (1, -1 text format)
+  "Address Adjustment"?: string;  // ✅ ADDED: Address adjustment field (1, -1 text format)
+  "Scope Font Size"?: string;  // ✅ ADDED: Scope font size field (1, -2 text format)
+  "Scope Adjustment"?: string;  // ✅ ADDED: Scope adjustment field (1, -1 text format)
+  "Name Font Size"?: string;  // ✅ ADDED: Name font size field (1, -1 text format)
+  "Name Adjustment"?: string;  // ✅ ADDED: Name adjustment field (1, -1 text format)
 }
 
 interface ProcessedRow {
@@ -51,6 +57,13 @@ interface ProcessedRow {
   extraLine: string;
   // ✅ ADDED: Language field (S or blank)
   language: string;
+  // ✅ ADDED: Font size and adjustment fields
+  addressFontSize: string;  // Address font size (1, -1 text format)
+  addressAdjustment: string;  // Address adjustment (1, -1 text format)
+  scopeFontSize: string;  // Scope font size (1, -2 text format)
+  scopeAdjustment: string;  // Scope adjustment (1, -1 text format)
+  nameFontSize: string;  // Name font size (1, -1 text format)
+  nameAdjustment: string;  // Name adjustment (1, -1 text format)
   
   isValid: boolean;
   errors: string[];
@@ -183,6 +196,32 @@ export default function CertificateGeneratorTabExcel() {
         case 'language':
           mapping[header] = 'language';
           break;
+        // ✅ ADDED: Map font size and adjustment fields
+        case 'addressfontsize':
+        case 'address_font_size':
+          mapping[header] = 'addressFontSize';
+          break;
+        case 'addressadjustment':
+        case 'address_adjustment':
+          mapping[header] = 'addressAdjustment';
+          break;
+        case 'scopefontsize':
+        case 'scope_font_size':
+          mapping[header] = 'scopeFontSize';
+          break;
+        case 'scopeadjustment':
+        case 'scope_adjustment':
+          mapping[header] = 'scopeAdjustment';
+          break;
+        // ✅ ADDED: Map name font size and adjustment fields
+        case 'namefontsize':
+        case 'name_font_size':
+          mapping[header] = 'nameFontSize';
+          break;
+        case 'nameadjustment':
+        case 'name_adjustment':
+          mapping[header] = 'nameAdjustment';
+          break;
         default:
           // Ignore unknown columns
           break;
@@ -222,6 +261,13 @@ export default function CertificateGeneratorTabExcel() {
       extraLine: '',
       // ✅ ADDED: Initialize Language field (S or blank)
       language: '',
+      // ✅ ADDED: Initialize font size and adjustment fields
+      addressFontSize: '',
+      addressAdjustment: '',
+      scopeFontSize: '',
+      scopeAdjustment: '',
+      nameFontSize: '',
+      nameAdjustment: '',
       
       isValid: false,
       errors: []
@@ -304,6 +350,26 @@ export default function CertificateGeneratorTabExcel() {
         // ✅ ADDED: Process Language field (S or blank)
         case 'language':
           processed.language = value.trim();
+          break;
+        // ✅ ADDED: Process font size and adjustment fields
+        case 'addressFontSize':
+          processed.addressFontSize = value.trim();
+          break;
+        case 'addressAdjustment':
+          processed.addressAdjustment = value.trim();
+          break;
+        case 'scopeFontSize':
+          processed.scopeFontSize = value.trim();
+          break;
+        case 'scopeAdjustment':
+          processed.scopeAdjustment = value.trim();
+          break;
+        // ✅ ADDED: Process name font size and adjustment fields
+        case 'nameFontSize':
+          processed.nameFontSize = value.trim();
+          break;
+        case 'nameAdjustment':
+          processed.nameAdjustment = value.trim();
           break;
       }
     });
@@ -716,7 +782,13 @@ export default function CertificateGeneratorTabExcel() {
         
         // ✅ ADDED: Extra fields
         'Extra Line': rows[i].extraLine || '',
-        'Language': rows[i].language || ''  // ✅ ADDED: Language field (S or blank)
+        'Language': rows[i].language || '',  // ✅ ADDED: Language field (S or blank)
+        'Address Font Size': rows[i].addressFontSize || '',  // ✅ ADDED: Address font size field
+        'Address Adjustment': rows[i].addressAdjustment || '',  // ✅ ADDED: Address adjustment field
+        'Scope Font Size': rows[i].scopeFontSize || '',  // ✅ ADDED: Scope font size field
+        'Scope Adjustment': rows[i].scopeAdjustment || '',  // ✅ ADDED: Scope adjustment field
+        'Name Font Size': rows[i].nameFontSize || '',  // ✅ ADDED: Name font size field
+        'Name Adjustment': rows[i].nameAdjustment || ''  // ✅ ADDED: Name adjustment field
       }));
 
       // ✅ ADDED: Add logo files to form data
@@ -1045,7 +1117,8 @@ export default function CertificateGeneratorTabExcel() {
         <div className="border-2 border-dashed border-orange-300 rounded-lg p-6 text-center hover:border-orange-400 transition-colors">
             <input
               type="file"
-              accept=".zip"
+              accept=".png,.jpg,.jpeg,.gif,.bmp"
+              multiple
               onChange={handleLogoFilesUpload}
               className="hidden"
               id="logo-upload"
@@ -1060,7 +1133,7 @@ export default function CertificateGeneratorTabExcel() {
                 <div className="space-y-2">
                   <ImageIcon className="h-8 w-8" />
                   <span>Click to upload logo files (Optional)</span>
-                  <span className="text-sm">Upload a ZIP file containing logo images</span>
+                  <span className="text-sm">Upload logo image files directly</span>
                   <span className="text-xs text-gray-500">Supports PNG, JPG, JPEG, GIF, BMP, or WebP images. Max 5MB per image</span>
                 </div>
               )}
