@@ -924,6 +924,13 @@ async def generate_printable(
     extra_line: str = Form(""),
     # ✅ ADDED: Extract Address alignment field
     address_alignment: str = Form(""),
+    # ✅ ADDED: Extract font size and adjustment fields
+    name_font_size: str = Form(""),
+    name_adjustment: str = Form(""),
+    address_font_size: str = Form(""),
+    address_adjustment: str = Form(""),
+    scope_font_size: str = Form(""),
+    scope_adjustment: str = Form(""),
     logo: str = Form(""),
     template: UploadFile = File(None)
 ):
@@ -979,6 +986,13 @@ async def generate_printable(
             "Extra Line": extra_line if extra_line else "",
             # ✅ ADDED: Add Address alignment field
             "Address alignment": address_alignment if address_alignment else "",
+            # ✅ ADDED: Add font size and adjustment fields
+            "Name Font Size": name_font_size if name_font_size else "",
+            "Name Adjustment": name_adjustment if name_adjustment else "",
+            "Address Font Size": address_font_size if address_font_size else "",
+            "Address Adjustment": address_adjustment if address_adjustment else "",
+            "Scope Font Size": scope_font_size if scope_font_size else "",
+            "Scope Adjustment": scope_adjustment if scope_adjustment else "",
             # ✅ ADDED: Add logo lookup for filename matching
             "logo_lookup": logo_lookup
         }
@@ -997,6 +1011,13 @@ async def generate_printable(
         field_data["Recertification Date"] = recertification_date
         # ✅ ADDED: Add Extra Line field to field data
         field_data["Extra Line"] = extra_line
+        # ✅ ADDED: Add font size and adjustment fields to field data
+        field_data["Name Font Size"] = name_font_size
+        field_data["Name Adjustment"] = name_adjustment
+        field_data["Address Font Size"] = address_font_size
+        field_data["Address Adjustment"] = address_adjustment
+        field_data["Scope Font Size"] = scope_font_size
+        field_data["Scope Adjustment"] = scope_adjustment
         print(f"🔍 [PRINTABLE] Extra Line received: '{extra_line}'")
         print(f"🔍 [PRINTABLE] Extra Line length: {len(extra_line)}")
         print(f"🔍 [PRINTABLE] Extra Line in field_data: '{field_data.get('Extra Line', 'NOT_FOUND')}'")
