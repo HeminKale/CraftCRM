@@ -1,6 +1,27 @@
 from docx import Document
 import fitz  # PyMuPDF
 from typing import Dict
+from .font_utils import calculate_optimal_font_size_with_line_breaks
+#CraftApp - Copy
+def parse_excel_adjustment(value):
+    """Parse Excel adjustment value (position adjustment)"""
+    # Handle None, empty string, or whitespace-only values
+    if value is None or (isinstance(value, str) and value.strip() == ''):
+        return 0
+    try:
+        return float(str(value).strip())
+    except (ValueError, TypeError):
+        return 0
+
+def parse_excel_font_size(value):
+    """Parse Excel font size adjustment value"""
+    # Handle None, empty string, or whitespace-only values
+    if value is None or (isinstance(value, str) and value.strip() == ''):
+        return 0
+    try:
+        return float(str(value).strip())
+    except (ValueError, TypeError):
+        return 0
 
 def safe_insert_text(page, position, text, **kwargs):
     """Safely insert text handling Unicode characters that might cause ByteString errors."""
@@ -262,7 +283,7 @@ ISO_STANDARDS_CODES = {
 ISO_STANDARDS_DESCRIPTIONS = {
     "ISO 9001:2015": "Quality Management System",
     "ISO 14001:2015": "Environmental Management System",
-    "ISO 45001:2018": "Occupational Health & Safety",
+    "ISO 45001:2018": "Occupational Health & Safety Management System",
     "ISO 50001:2018": "Energy Management System",
     "ISO 31000:2018": "Risk Management Guidelines",
     "ISO 22000:2018": "Food Safety Management System",
@@ -565,40 +586,6 @@ def render_optional_fields(page, values, key_coords, value_coords, font_settings
     }
 
 
-def parse_excel_adjustment(value):
-    """Parse Excel adjustment value (e.g., '1', '-1', '+2') to float."""
-    if not value or value.strip() == '':
-        return 0
-    value = value.strip()
-    if value.startswith('-'):
-        try:
-            return -float(value[1:])
-        except ValueError:
-            return 0
-    if value.startswith('+'):
-        value = value[1:]
-    try:
-        return float(value)
-    except ValueError:
-        return 0
-
-def parse_excel_font_size(value):
-    """Parse Excel font size adjustment value (e.g., '1', '-1', '+2') to float."""
-    if not value or value.strip() == '':
-        return 0
-    value = value.strip()
-    if value.startswith('-'):
-        try:
-            return -float(value[1:])
-        except ValueError:
-            return 0
-    if value.startswith('+'):
-        value = value[1:]
-    try:
-        return float(value)
-    except ValueError:
-        return 0
-
 def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str, str], template_type: str = "standard", mode: str = "softcopy") -> Dict[str, any]:
     """
     Generate PDF with unified logic for both softcopy and printable modes.
@@ -672,6 +659,24 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
     # --- Configuration ---
     color = (0, 0, 0)  # Black text
     fontname = "Times-Bold"  # Use bold font
+    
+    # ✅ ADDED: Extract Excel adjustments for all fields
+    name_adjustment = parse_excel_adjustment(values.get("Name Adjustment", ""))
+    name_font_size_adjustment = parse_excel_font_size(values.get("Name Font Size", ""))
+    address_adjustment = parse_excel_adjustment(values.get("Address Adjustment", ""))
+    address_font_size_adjustment = parse_excel_font_size(values.get("Address Font Size", ""))
+    scope_adjustment = parse_excel_adjustment(values.get("Scope Adjustment", ""))
+    scope_font_size_adjustment = parse_excel_font_size(values.get("Scope Font Size", ""))
+    force_font_size = values.get("Force Font Size", "").strip().lower()
+    
+    print(f"🔍 [SOFTCOPY DEBUG] Excel adjustments loaded:")
+    print(f"  Name Adjustment: {name_adjustment}pt")
+    print(f"  Name Font Size: {name_font_size_adjustment}pt")
+    print(f"  Address Adjustment: {address_adjustment}pt")
+    print(f"  Address Font Size: {address_font_size_adjustment}pt")
+    print(f"  Scope Adjustment: {scope_adjustment}pt")
+    print(f"  Scope Font Size: {scope_font_size_adjustment}pt")
+    print(f"  Force Font Size: {force_font_size}")
     
     # ✅ ADDED: Font weight preservation system
     def detect_font_weight(text):
@@ -791,37 +796,13 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
     
     # Process logo if specified and available
     logo_image = None
-    if logo_lookup and len(logo_lookup) > 0:
+    if logo_filename and logo_lookup and logo_filename in logo_lookup:
         try:
             # Convert uploaded file to PIL Image
             from PIL import Image
             import io
             
-            # Use exact match if available, otherwise try partial match, otherwise use first available
-            logo_file = None
-            if logo_filename and logo_filename in logo_lookup:
-                logo_file = logo_lookup[logo_filename]
-                print(f"🔍 [SOFTCOPY] Using exact logo match: {logo_filename}")
-            elif logo_filename:
-                # Try partial match (filename without extension)
-                for filename, file in logo_lookup.items():
-                    if logo_filename in filename or filename.split('.')[0] == logo_filename:
-                        logo_file = file
-                        print(f"🔍 [SOFTCOPY] Using partial logo match: '{logo_filename}' → '{filename}'")
-                        break
-            
-            if not logo_file:
-                # Use first available logo file, but check if it's a valid image format
-                for filename, file in logo_lookup.items():
-                    # Check if file has valid image extension
-                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
-                        logo_file = file
-                        print(f"🔍 [SOFTCOPY] Using first valid image file: {filename}")
-                        break
-                
-                if not logo_file:
-                    print(f"⚠️ [SOFTCOPY] No valid image files found in logo_lookup: {list(logo_lookup.keys())}")
-            
+            logo_file = logo_lookup[logo_filename]
             if hasattr(logo_file, 'file'):
                 # Reset file pointer
                 logo_file.file.seek(0)
@@ -829,16 +810,12 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 logo_content = logo_file.file.read()
                 # Convert to PIL Image
                 logo_image = Image.open(io.BytesIO(logo_content))
-                print(f"✅ [SOFTCOPY] Logo image loaded successfully")
             else:
                 logo_image = None
-                print(f"⚠️ [SOFTCOPY] Logo file has no file attribute")
         except Exception as logo_error:
             logo_image = None
-            print(f"❌ [SOFTCOPY] Error loading logo image: {logo_error}")
     else:
         logo_image = None
-        print(f"🔍 [SOFTCOPY] No logo to process: logo_filename='{logo_filename}', logo_lookup_count={len(logo_lookup) if logo_lookup else 0}")
 
     # Standard template coordinates
     standard_coords = {
@@ -1140,7 +1117,9 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
     # (same timing as certificate generation)
 
     # Process each field
+    print(f"🔍 [SOFTCOPY DEBUG] Processing {len(values)} fields from Excel data")
     for field, text in values.items():
+        print(f"🔍 [SOFTCOPY DEBUG] Field: '{field}' = '{text}'")
         if field in ["Certificate Number", "Original Issue Date", "Issue Date", "Surveillance/ Expiry Date", "Recertification Date", "Initial Registration Date", "Surveillance Due Date", "Expiry Date"]:
             # Skip individual processing - handled by batch renderer
             print(f"🔍 [SOFTCOPY] Skipping individual processing for '{field}' - will be handled by optional fields renderer")
@@ -1203,19 +1182,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             else:
                 # Default logic: always center unless Excel column specifies otherwise
                 address_alignment = "center"  # Default: always center
-            
-            # Γ£à ADDED: Extract Excel adjustment and font size values     
-            name_adjustment_raw = values.get("Name Adjustment", "")
-            name_font_size_raw = values.get("Name Font Size", "")
-            address_adjustment_raw = values.get("Address Adjustment", "")
-            address_font_size_raw = values.get("Address Font Size", "")
-            
-            
-            name_adjustment = parse_excel_adjustment(name_adjustment_raw)
-            name_font_size_adjustment = parse_excel_font_size(name_font_size_raw)
-            address_adjustment = parse_excel_adjustment(address_adjustment_raw)
-            address_font_size_adjustment = parse_excel_font_size(address_font_size_raw)
-            
+                print(f"🔍 [SOFTCOPY] Address: No Excel column value - using CENTERED alignment (default)")
 
            
 
@@ -1242,10 +1209,6 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             
             address_font_size = 13.6
             print(f"🔍 [SOFTCOPY DEBUG] Address starting font size: {address_font_size}pt")
-            
-            # ✅ ADDED: Apply Excel font size adjustments
-            company_font_size += name_font_size_adjustment
-            address_font_size += address_font_size_adjustment
             
             # Variables to store the final wrapped lines and font sizes
             final_company_lines = []
@@ -1309,6 +1272,12 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                     
                     # Reduce Company Name font size
                     company_font_size -= 1
+            
+            # ✅ UPDATED: Apply Excel font size adjustment AFTER optimization (user override)
+            if name_font_size_adjustment != 0:
+                optimized_company_font = company_font_size
+                company_font_size += name_font_size_adjustment
+                print(f"🔍 [SOFTCOPY DEBUG] Company Name Font Size adjustment AFTER optimization: {optimized_company_font}pt + {name_font_size_adjustment}pt = {company_font_size}pt")
 
             # Calculate Company Name height (dynamic based on template and address lines)
             if len(final_company_lines) > 1:
@@ -1326,7 +1295,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 elif original_template_type in ["standard", "standard_eco", "standard_nonaccredited", "standard_other", "standard_other_eco", "standard_nonaccredited_other"]:
                     # Standard template
                     if address_lines_count == 1:
-                        company_height = 50  # More space for company name when address is single line (was 45)
+                        company_height = 45  # More space for company name when address is single line
                     else:
                         company_height = 30  # Less space when address is multi-line
                 else:
@@ -1349,7 +1318,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 elif original_template_type in ["standard", "standard_eco", "standard_nonaccredited", "standard_other", "standard_other_eco", "standard_nonaccredited_other"]:
                     # Standard template
                     if address_lines_count == 1:
-                        company_height = 50  # More space for company name when address is single line (was 45)
+                        company_height = 45  # More space for company name when address is single line
                     else:
                         company_height = 30  # Less space when address is multi-line
                 else:
@@ -1455,7 +1424,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                             company_height = 25  # Less space when address is multi-line (was 20)
                     elif original_template_type in ["standard", "standard_eco", "standard_nonaccredited", "standard_other", "standard_other_eco", "standard_nonaccredited_other"]:
                         if address_lines_count == 1:
-                            company_height = 50  # More space for company name when address is single line (was 45)
+                            company_height = 45  # More space for company name when address is single line
                         else:
                             company_height = 30  # Less space when address is multi-line
                     else:
@@ -1508,7 +1477,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                                 company_height = 20  # Less space when address is multi-line
                         elif original_template_type in ["standard", "standard_eco", "standard_nonaccredited", "standard_other", "standard_other_eco", "standard_nonaccredited_other"]:
                             if address_lines_count == 1:
-                                company_height = 50  # More space for company name when address is single line (was 45)
+                                company_height = 45  # More space for company name when address is single line
                             else:
                                 company_height = 30  # Less space when address is multi-line
                         else:
@@ -1565,8 +1534,12 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                     if current_line:
                         address_lines.append(current_line)
 
-                # Calculate Address height (use same multiplier as rendering: 1.05)
-                address_height = len(address_lines) * address_font_size * 1.05
+                # Calculate Address height
+                # Template-specific line spacing: 1.1 for large/logo, 1.2 for standard
+                if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
+                    address_height = len(address_lines) * address_font_size * 1.1  # Tight spacing for large/logo templates
+                else:  # standard templates
+                    address_height = len(address_lines) * address_font_size * 1.2  # Loose spacing for standard templates
                 
                 print(f"🔍 [SOFTCOPY DEBUG] Address font {address_font_size:.1f}pt: {len(address_lines)} lines, height {address_height:.1f}pt, remaining {remaining_height:.1f}pt")
 
@@ -1579,6 +1552,12 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
 
                 # Reduce Address font size
                 address_font_size -= 0.5
+            
+            # ✅ UPDATED: Apply Excel font size adjustment AFTER optimization (user override)
+            if address_font_size_adjustment != 0:
+                optimized_address_font = address_font_size
+                address_font_size += address_font_size_adjustment
+                print(f"🔍 [SOFTCOPY DEBUG] Address Font Size adjustment AFTER optimization: {optimized_address_font}pt + {address_font_size_adjustment}pt = {address_font_size}pt")
 
             # Now render Company Name and Address dynamically
             if final_company_lines or final_address_lines:
@@ -1595,7 +1574,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 total_height = company_height + address_height
                 print(f"🔍 [SOFTCOPY DEBUG] Total height: {total_height:.1f}pt")
 
-                # No top margin - start at exact rectangle top
+                # No top margin - start at exact rectangle top + Excel adjustment
                 start_y = rect.y0 + name_adjustment  # Start at exact top of box + Excel adjustment
 
 
@@ -1615,20 +1594,8 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                         # Single line: dynamic height based on template and address lines
                         address_lines_count = len(final_address_lines)
                         
-                        if original_template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_other_nonaccredited", "large_nonaccredited_other"]:
-                            if address_lines_count == 1:
-                                line_height = 42  # Name +8, Address -5 (was 34)
-                            elif address_lines_count == 2:
-                                line_height = 33  # Name +8, Address -5 (was 25)
-                            else:  # 3+ lines
-                                line_height = 19  # Name 19pt, Address 37pt (fits in 56pt total)
-                        elif original_template_type in ["standard", "standard_eco", "standard_nonaccredited", "standard_other", "standard_other_eco", "standard_nonaccredited_other"]:
-                            if address_lines_count == 1:
-                                line_height = 50  # More space for company name when address is single line (was 45)
-                            else:
-                                line_height = 30  # Less space when address is multi-line
-                        else:
-                            line_height = 25  # Logo template and others - use default 25pt
+                        # Use dynamic line_height like certificate for all templates (company_font_size * 1.02)
+                        line_height = company_font_size * 1.02  # Dynamic spacing for consistency with certificate
                     # Apply baseline offset only for single-line company names
                     if not has_multiple_lines:
                         # Single-line: Apply baseline offset to prevent overlap
@@ -1687,13 +1654,13 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                     for i, line in enumerate(final_address_lines):
                         line_height = address_font_size * 1.05  # Consistent spacing for all templates
                         
-                        # Apply compensation for single-line address regardless of company line count
+                        # Apply compensation for single-line address regardless of company line count + Excel adjustment
                         if has_multiple_address_lines:
-                            # Multi-line address: no baseline centering, no compensation
-                            y_pos = current_y
+                            # Multi-line address: no baseline centering, no compensation + Excel adjustment
+                            y_pos = current_y + address_adjustment
                         else:
-                            # Single-line address: keep baseline centering with compensation
-                                y_pos = current_y + (line_height / 2) - (company_font_size * 0.2) + address_adjustment  # Centered + compensation + Excel adjustment
+                            # Single-line address: keep baseline centering with compensation + Excel adjustment
+                            y_pos = current_y + (line_height / 2) - (company_font_size * 0.2) + address_adjustment  # Centered + compensation + Excel adjustment
                         
                         # ✅ ADDED: Dynamic alignment based on address line count
                         if address_alignment == "center":
@@ -1746,12 +1713,14 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             else:
                 print(f"⚠️ [SOFTCOPY] No company or address lines to render")
 
-        elif field == "ISO Standard":
+        elif field in ["ISO Standard", "ISO", "Standard", "iso_standard", "iso standard"]:
             # Handle ISO Standard with SAME LOGIC AS generate_certificate
+            print(f"🔍 [SOFTCOPY DEBUG] Processing ISO Standard (field='{field}'): '{text}'")
             # Expand ISO standard if needed
             expanded_text = expand_iso_standard(text)
             if expanded_text != text:
                 text = expanded_text
+                print(f"🔍 [SOFTCOPY DEBUG] ISO Standard expanded: '{text}'")
 
             # After processing ISO Standard, render the management system line
             iso_standard_text = text
@@ -1804,12 +1773,9 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             center_x = (management_rect.x0 + management_rect.x1) / 2
             center_y = (management_rect.y0 + management_rect.y1) / 2 + 15/3  # Adjust for baseline
 
-            # Determine font size: 12pt for Spanish + ISO 45001, otherwise 15pt
-            management_font_size = 12 if (language == "s" and "45001" in expanded_text) else 15
-            
             # Calculate text width for centering
             font_obj = fitz.Font(fontname="Times-BoldItalic")  # Use bold italic font
-            text_width = font_obj.text_length(management_line, management_font_size)
+            text_width = font_obj.text_length(management_line, 15)
             start_x = center_x - text_width / 2
 
             # Insert the management system text
@@ -1817,7 +1783,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 page,
                 (start_x, center_y),
                 management_line,
-                fontsize=management_font_size,
+                fontsize=15,
                 fontname="Times-BoldItalic", # Bold italic font
                 color=(0, 0, 0)  # Black color
             )
@@ -1830,11 +1796,16 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             rect = coords["ISO Standard"]
             start_size = font_starts.get("ISO Standard", 80)
             font_size = start_size
+            
+            print(f"🔍 [SOFTCOPY DEBUG] ISO Standard coordinates: {rect}")
+            print(f"🔍 [SOFTCOPY DEBUG] ISO Standard starting font size: {start_size}pt")
 
             # Reduce font size if it doesn't fit, but ensure minimum size
             while font_size >= 12:  # Increased minimum from 10 to 12
                 text_height = get_text_height(text, font_size, fontname, rect.width)
                 limit = rect.height
+                
+                print(f"🔍 [SOFTCOPY DEBUG] Font size {font_size}pt: text_height={text_height:.1f}pt, limit={limit:.1f}pt")
 
                 if text_height <= limit:
                     break
@@ -1843,6 +1814,15 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             # Perfect centering for ISO Standard - both horizontal and vertical
             center_x = (rect.x0 + rect.x1) / 2
             center_y = (rect.y0 + rect.y1) / 2 + font_size/3  # Adjust for baseline
+
+            # 🔍 DEBUG: Check font availability and rendering
+            try:
+                test_font = fitz.Font(fontname=fontname)
+                print(f"🔍 [SOFTCOPY DEBUG] ISO Standard font '{fontname}' loaded successfully")
+            except Exception as font_error:
+                print(f"⚠️ [SOFTCOPY DEBUG] Font '{fontname}' failed to load: {font_error}")
+                fontname = "Times-Roman"  # Fallback to Times-Roman
+                print(f"🔍 [SOFTCOPY DEBUG] Using fallback font: {fontname}")
 
             # ✅ ENHANCED: Use mixed format text rendering for bold detection
             if '**' in text or '__' in text:
@@ -1862,17 +1842,21 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 text_width = font_obj.text_length(text, font_size)
                 start_x = center_x - text_width / 2
 
+                # Use original insert_text method (textbox method caused positioning issues)
                 safe_insert_text(
-                page,
+                    page,
                     (start_x, center_y),
                     text,
                     fontsize=font_size,
                     fontname=fontname,
                     color=color
                 )
+                print(f"🔍 [SOFTCOPY DEBUG] ISO Standard rendered using insert_text method")
 
             # Print font size for ISO Standard
             print(f"📏 [SOFTCOPY] ISO Standard: {font_size}pt (centered)")
+            print(f"🔍 [SOFTCOPY DEBUG] ISO Standard final rendering: text='{text}', font_size={font_size}pt, center=({center_x:.1f}, {center_y:.1f})")
+            print(f"✅ [SOFTCOPY] ISO Standard field processed successfully")
             
             # ✅ MODIFIED: Render certification code below ISO Standard with different coordinates for non-accredited
             try:
@@ -1934,14 +1918,6 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             # Scope text now uses justification (left and right alignment) for professional appearance
             rect = coords["Scope"]
             
-            # ✅ ADDED: Extract Excel adjustment and font size values for Scope
-            scope_adjustment_raw = values.get("Scope Adjustment", "")
-            scope_font_size_raw = values.get("Scope Font Size", "")
-            
-            
-            scope_adjustment = parse_excel_adjustment(scope_adjustment_raw)
-            scope_font_size_adjustment = parse_excel_font_size(scope_font_size_raw)
-            
             
             # Template-specific starting font size for Scope
             if template_type == "standard" and scope_layout == "short":
@@ -1949,7 +1925,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             else:
                 start_size = font_starts.get("Scope", 20)  # Large template or standard long scope: max 20pt
             
-            font_size = start_size + scope_font_size_adjustment  # ✅ ADDED: Apply Excel font size adjustment
+            font_size = start_size
             iteration_count = 0
 
             # Reduce font size if it doesn't fit, but ensure minimum size
@@ -1966,164 +1942,47 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             # PowerPoint-style centering with automatic font size reduction
             original_font_size = font_size
             
-            # ✅ ENHANCED: Optimized font calculation that prioritizes line break boundaries
-            def calculate_optimal_font_size_with_line_breaks(text, rect, fontname, template_type, min_font_size=4):
-                """
-                Enhanced font calculation that finds the minimum font size needed for the longest line,
-                then applies that font size to the entire field to respect line break boundaries.
-                """
-                if '\n' not in text and '\r\n' not in text:
-                    # No line breaks - use standard logic
-                    return calculate_standard_font_size(text, rect, fontname, template_type, min_font_size)
-                
-                print(f"🔍 [SOFTCOPY OPTIMIZATION] Line breaks detected - finding minimum font size for longest line")
-                
-                # Split by line breaks
-                text_lines = text.split('\n')
-                
-                # Step 1: Find the minimum font size needed for the LONGEST line
-                min_font_for_lines = []
-                
-                for line_idx, line in enumerate(text_lines):
-                    if not line.strip():
-                        min_font_for_lines.append(original_font_size)  # Empty line doesn't need font reduction
-                        continue
-                    
-                    # Find minimum font size for this specific line
-                    line_font_size = original_font_size
-                    font_obj = fitz.Font(fontname=fontname)
-                    
-                    while line_font_size >= min_font_size:
-                        line_width = font_obj.text_length(line.strip(), line_font_size)
-                        if line_width <= rect.width:
-                            break
-                        line_font_size -= 0.5
-                    
-                    min_font_for_lines.append(max(line_font_size, min_font_size))
-                    print(f"🔍 [SOFTCOPY OPTIMIZATION] Line {line_idx + 1} needs minimum font: {line_font_size:.1f}pt for '{line.strip()[:30]}...'")
-                
-                # Step 2: Use the LOWEST font size (the one needed for the longest line)
-                optimal_font_size = min(min_font_for_lines)
-                print(f"🔍 [SOFTCOPY OPTIMIZATION] Using lowest font size: {optimal_font_size:.1f}pt for entire field")
-                
-                # Step 3: Process all lines with this optimal font size
+            
+            # ✅ ADDED: Force Font Size logic
+            if force_font_size in ["true", "1", "yes", "force"]:
+                # Force font size - bypass optimization
+                print(f"🔍 [SOFTCOPY DEBUG] Force Font Size enabled - using {font_size}pt without optimization")
+                # Simple word wrapping for forced font size
+                words = text.split()
                 lines = []
-                total_lines = 0
-                
-                for line_idx, line in enumerate(text_lines):
-                    if not line.strip():
-                        lines.append("")  # Preserve empty line
-                        total_lines += 1
-                        continue
-                    
-                    # Check if this line fits without word wrapping at optimal font size
+                current_line = ""
+                for word in words:
+                    test_line = current_line + (" " if current_line else "") + word
                     font_obj = fitz.Font(fontname=fontname)
-                    line_width = font_obj.text_length(line.strip(), optimal_font_size)
-                    
-                    if line_width <= rect.width:
-                        # Line fits as-is - respect the line break
-                        lines.append(line.strip())
-                        total_lines += 1
-                        print(f"🔍 [SOFTCOPY OPTIMIZATION] Line {line_idx + 1} fits as-is at {optimal_font_size:.1f}pt")
+                    if font_obj.text_length(test_line, font_size) <= rect.width:
+                        current_line = test_line
                     else:
-                        # Line still needs word wrapping - calculate how many lines it will create
-                        words = line.strip().split()
-                        wrapped_lines = 0
-                        current_line = ""
-                        
-                        for word in words:
-                            # Check if word starts with bullet point indicators (excluding '-' as per user request)
-                            is_bullet_point = any(word.startswith(indicator) for indicator in ['•', '>', '→', '▪', '▫', '*'])
-                            
-                            # If it's a bullet point and we have content, start a new line
-                            if is_bullet_point and current_line:
-                                lines.append(current_line)
-                                wrapped_lines += 1
-                                current_line = word
-                                continue
-                            
-                            test_line = current_line + (" " if current_line else "") + word
-                            
-                            if font_obj.text_length(test_line, optimal_font_size) <= rect.width:
-                                current_line = test_line
-                            else:
-                                if current_line:
-                                    lines.append(current_line)
-                                    wrapped_lines += 1
-                                current_line = word
-                        
                         if current_line:
                             lines.append(current_line)
-                            wrapped_lines += 1
-                        
-                        total_lines += wrapped_lines
-                        print(f"🔍 [SOFTCOPY OPTIMIZATION] Line {line_idx + 1} needs wrapping: {wrapped_lines} lines at {optimal_font_size:.1f}pt")
+                        current_line = word
+                if current_line:
+                    lines.append(current_line)
+            else:
+                # Use shared optimized font calculation
+                min_font_size = 4  # Allow font size to go below 8pt if needed
+                original_font_size = font_size  # Pass current font size as starting point
+                print(f"🔍 [SOFTCOPY DEBUG] Starting font optimization: {original_font_size}pt → shared function")
+                font_size, lines = calculate_optimal_font_size_with_line_breaks(text, rect, fontname, template_type, min_font_size, original_font_size)
                 
-                # Step 4: Check if total height fits
-                if original_template_type in ["large", "large_eco", "large_nonaccredited", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
-                    line_height = optimal_font_size * 1.1
-                else:
-                    line_height = optimal_font_size * 1.2
-                
-                total_height = total_lines * line_height
-                
-                if total_height <= rect.height:
-                    print(f"🔍 [SOFTCOPY OPTIMIZATION] ✅ Optimal font size {optimal_font_size:.1f}pt fits! (total lines: {total_lines})")
-                    return optimal_font_size, lines
-                else:
-                    print(f"⚠️ [SOFTCOPY OPTIMIZATION] Font size {optimal_font_size:.1f}pt still too large, using minimum: {min_font_size}pt")
-                    return min_font_size, lines
+                # Apply relative font size adjustment if force_font_size is a number
+                try:
+                    if force_font_size.replace('.', '').replace('-', '').isdigit():
+                        relative_adjustment = float(force_font_size)
+                        font_size += relative_adjustment
+                        print(f"🔍 [SOFTCOPY DEBUG] Applied relative font size adjustment: {relative_adjustment}pt")
+                except ValueError:
+                    pass  # Invalid number, ignore
             
-            def calculate_standard_font_size(text, rect, fontname, template_type, min_font_size):
-                """Standard font calculation for text without line breaks"""
-                font_size = original_font_size
-                lines = []
-                
-                while font_size >= min_font_size:
-                    # Process text with word wrapping
-                    words = text.split()
-                    current_line = ""
-                    
-                    for word in words:
-                        is_bullet_point = any(word.startswith(indicator) for indicator in ['•', '>', '→', '▪', '▫', '*'])
-                        
-                        if is_bullet_point and current_line:
-                            lines.append(current_line)
-                            current_line = word
-                            continue
-                        
-                        test_line = current_line + (" " if current_line else "") + word
-                        font_obj = fitz.Font(fontname=fontname)
-                        
-                        if font_obj.text_length(test_line, font_size) <= rect.width:
-                            current_line = test_line
-                        else:
-                            if current_line:
-                                lines.append(current_line)
-                            current_line = word
-                    
-                    if current_line:
-                        lines.append(current_line)
-                    
-                    # Calculate total height
-                    if original_template_type in ["large", "large_eco", "large_nonaccredited", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
-                        line_height = font_size * 1.1
-                    else:
-                        line_height = font_size * 1.2
-                    
-                    total_height = len(lines) * line_height
-                    
-                    if total_height <= rect.height:
-                        break
-                    
-                    font_size -= 1
-                    lines = []  # Reset for next iteration
-                
-                return font_size, lines
-            
-            # Use optimized font calculation
-            min_font_size = 4  # Allow font size to go below 8pt if needed
-            font_size, lines = calculate_optimal_font_size_with_line_breaks(text, rect, fontname, template_type, min_font_size)
+            # ✅ UPDATED: Apply Excel font size adjustment AFTER optimization (user override)
+            if scope_font_size_adjustment != 0:
+                optimized_scope_font = font_size
+                font_size += scope_font_size_adjustment
+                print(f"🔍 [SOFTCOPY DEBUG] Scope Font Size adjustment AFTER optimization: {optimized_scope_font}pt + {scope_font_size_adjustment}pt = {font_size}pt")
             
             # Calculate final total height for overflow checking
             if original_template_type in ["large", "large_eco", "large_nonaccredited", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
@@ -2181,22 +2040,31 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 line_height = font_size * 1.2  # Loose spacing for standard templates
             total_height = len(lines) * line_height
             
-            if template_type in ["large", "large_eco", "large_nonaccredited"]:
-                # Large template: start from top with no margin
-                start_y = rect.y0 + scope_adjustment  # Start at exact top of box + Excel adjustment
+            if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_other_nonaccredited", "large_nonaccredited_other"]:
+                # Large template: start from top with no margin + Excel adjustment
+                start_y = rect.y0 + scope_adjustment
                 
                 # Check if text would overflow bottom
                 if start_y + total_height > rect.y1:
                     # If overflow, adjust to fit within bounds
                     start_y = rect.y1 - total_height - 1  # 1pt margin from bottom
             else:
-                # Standard template: keep current centering logic
+                # Standard template: keep current centering logic + Excel adjustment
                 start_y = rect.y0 + (rect.height - total_height) / 2 + line_height/2 + scope_adjustment  # Adjust for baseline + Excel adjustment
             
             # Debug output for line break processing
             has_line_breaks = '\n' in text
             if '\n' in text:
                 line_break_positions = [i for i, char in enumerate(text) if char == '\n']
+                
+                # ✅ ADDED: Apply line break positioning with Excel adjustment
+                if has_line_breaks:
+                    # If explicit line breaks, hard-code 7pt top offset + Excel adjustment
+                    start_y = rect.y0 + 7 + scope_adjustment
+                    print(f"🔍 [SOFTCOPY DEBUG] Line breaks detected: start_y = {rect.y0} + 7 + {scope_adjustment} = {start_y}")
+                else:
+                    # No line breaks - use calculated position
+                    print(f"🔍 [SOFTCOPY DEBUG] No line breaks: start_y = {start_y}")
 
            
 
@@ -2355,17 +2223,16 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
         except Exception as e:
             print(f"❌ [SOFTCOPY] Error inserting logo: {e}")
 
-    # ✅ UPDATED: Insert logo if available and using any logo template type
-    if logo_image and template_type.startswith("logo"):
+    # ✅ UPDATED: Insert logo if available and using logo template
+    if logo_image and template_type == "logo":
         try:
             # Get logo coordinates from logo_coords
             logo_rect = logo_coords.get("logo")
             if logo_rect:
                 # Use the new shared logo function
                 insert_logo_with_smart_positioning(page, logo_image, logo_rect)
-                print(f"✅ [SOFTCOPY] Logo inserted for template type: {template_type}")
             else:
-                print(f"⚠️ [SOFTCOPY] Logo coordinates not found in logo_coords for template: {template_type}")
+                print("⚠️ [SOFTCOPY] Logo coordinates not found in logo_coords")
         except Exception as logo_insert_error:
             print(f"❌ [SOFTCOPY] Error inserting logo: {logo_insert_error}")
 
@@ -2419,7 +2286,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
         
         # Calculate Extra Line position (0pt gap below scope)
         # Use the same scope_rect that was used for scope rendering
-        if template_type in ["large", "large_eco", "large_nonaccredited"]:
+        if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_other_nonaccredited", "large_nonaccredited_other"]:
             scope_rect = coords["Scope"]  # Single rectangle for large templates
         else:
             # For standard/logo templates, use the stored original coordinates
