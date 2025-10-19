@@ -1,19 +1,21 @@
 from docx import Document
 import fitz  # PyMuPDF
 from typing import Dict
-
+from .font_utils import calculate_optimal_font_size_with_line_breaks
+#CraftApp - Copy        
 def parse_excel_adjustment(value):
-    """Parse Excel adjustment value (e.g., '-1', '+2', '3', '') and return numeric value."""
-    if not value or value.strip() == '':
+    """Parse Excel adjustment value (e.g., '-1', '+2', '3', '', None) and return numeric value."""
+    # Handle None, empty string, or whitespace-only values
+    if value is None or (isinstance(value, str) and value.strip() == ''):
         return 0
     
-    value = value.strip()
+    value = str(value).strip()
     
     # Handle negative values
     if value.startswith('-'):
         try:
             return -float(value[1:])
-        except ValueError:
+        except (ValueError, TypeError):
             return 0
     
     # Handle positive values (with or without +)
@@ -22,21 +24,22 @@ def parse_excel_adjustment(value):
     
     try:
         return float(value)
-    except ValueError:
+    except (ValueError, TypeError):
         return 0
 
 def parse_excel_font_size(value):
-    """Parse Excel font size value (e.g., '-1', '+2', '3', '') and return numeric value."""
-    if not value or value.strip() == '':
+    """Parse Excel font size value (e.g., '-1', '+2', '3', '', None) and return numeric value."""
+    # Handle None, empty string, or whitespace-only values
+    if value is None or (isinstance(value, str) and value.strip() == ''):
         return 0
     
-    value = value.strip()
+    value = str(value).strip()
     
     # Handle negative values
     if value.startswith('-'):
         try:
             return -float(value[1:])
-        except ValueError:
+        except (ValueError, TypeError):
             return 0
     
     # Handle positive values (with or without +)
@@ -45,7 +48,7 @@ def parse_excel_font_size(value):
     
     try:
         return float(value)
-    except ValueError:
+    except (ValueError, TypeError):
         return 0
 
 def safe_insert_text(page, position, text, **kwargs):
@@ -159,7 +162,7 @@ ISO_STANDARDS_CODES = {
 ISO_STANDARDS_DESCRIPTIONS = {
     "ISO 9001:2015": "Quality Management System",
     "ISO 14001:2015": "Environmental Management System",
-    "ISO 45001:2018": "Occupational Health & Safety",
+    "ISO 45001:2018": "Occupational Health & Safety Management System",
     "ISO 50001:2018": "Energy Management System",
     "ISO 31000:2018": "Risk Management Guidelines",
     "ISO 22000:2018": "Food Safety Management System",
@@ -775,7 +778,7 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
         
         # If no bold markers found, return original text with default font
         if not segments:
-            segments.append((text, "Times-Bold", False))
+            segments.append((text, "Times-Roman", False))
         
         return segments
 
@@ -1510,10 +1513,6 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             
             address_font_size = 13.6
             
-            # ✅ ADDED: Apply Excel font size adjustments
-            company_font_size += name_font_size_adjustment
-            address_font_size += address_font_size_adjustment
-            
             # Variables to store the final wrapped lines and font sizes
             final_company_lines = []
             final_address_lines = []
@@ -1582,6 +1581,12 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                 # Reduce Company Name font size
                 company_font_size -= 1
             
+            # ✅ UPDATED: Apply Excel font size adjustment AFTER optimization (user override)
+            if name_font_size_adjustment != 0:
+                optimized_company_font = company_font_size
+                company_font_size += name_font_size_adjustment
+                print(f"🔍 [CERTIFICATE DEBUG] Company Name Font Size adjustment AFTER optimization: {optimized_company_font}pt + {name_font_size_adjustment}pt = {company_font_size}pt")
+            
             # ✅ PHASE 0: Address Line Count-Based Height Allocation
             # Determine if company name is single-line or multi-line
             has_multiple_company_lines = len(final_company_lines) > 1
@@ -1598,7 +1603,7 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                         company_height = 19  # Name 19pt, Address 37pt (fits in 56pt total)
                 elif template_type in ["standard", "standard_eco", "standard_nonaccredited", "standard_other", "standard_other_eco", "standard_nonaccredited_other"]:
                     if address_lines_count == 1:
-                        company_height = 50  # More space for company name when address is single line
+                        company_height = 45  # Match single-line allocation
                     else:
                         company_height = 30  # Less space when address is multi-line
                 else:
@@ -1607,11 +1612,11 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                 # Single line company: dynamic height based on template and address lines
                 if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "large_nonaccredited_other"]:
                     if address_lines_count == 1:
-                        company_height = 34
+                        company_height = 42  # Match softCopy allocation
                     elif address_lines_count == 2:
                         company_height = 33  # Same as multi-line for 2 address lines
                     else:  # 3+ lines
-                        company_height = 25
+                        company_height = 19  # Match softCopy allocation
                 elif template_type in ["standard", "standard_eco", "standard_nonaccredited", "standard_other", "standard_other_eco", "standard_nonaccredited_other"]:
                     if address_lines_count == 1:
                         company_height = 45
@@ -1646,6 +1651,8 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             if company_font_size < 8:
                 company_font_size = 8
                 print(f"🔍 [CERTIFICATE DEBUG] Company font size set to minimum 8pt")
+            
+            # ✅ REMOVED: Name Font Size adjustment now applied BEFORE optimization (see above)
             
             # ✅ PHASE 2: Address Positioning Optimization
             # Now find font size for Address to fit in remaining space
@@ -1703,6 +1710,12 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                 # Reduce Address font size
                 address_font_size -= 0.5
             
+            # ✅ UPDATED: Apply Excel font size adjustment AFTER optimization (user override)
+            if address_font_size_adjustment != 0:
+                optimized_address_font = address_font_size
+                address_font_size += address_font_size_adjustment
+                print(f"🔍 [CERTIFICATE DEBUG] Address Font Size adjustment AFTER optimization: {optimized_address_font}pt + {address_font_size_adjustment}pt = {address_font_size}pt")
+            
             # Now render Company Name and Address dynamically
             if final_company_lines or final_address_lines:
                 
@@ -1720,8 +1733,8 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                 # Render Company Name first (starts from top)
                 current_y = start_y
                 for i, line in enumerate(final_company_lines):
-                    # Consistent line spacing: 1.05 for all templates
-                    line_height = company_font_size * 1.05  # Consistent spacing for all templates
+                    # Consistent line spacing: 1.02 for all templates
+                    line_height = company_font_size * 1.02  # Consistent spacing for all templates
                     
                     # ✅ PHASE 1: Company Name Baseline Positioning Fix
                     # Apply baseline offset only for single-line company names
@@ -1921,8 +1934,41 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             # Print font size for management system
 
             
-            # Update the text to use expanded version for display
-            text = expanded_iso
+            # ✅ NEW: Render ISO Standard with centered positioning (like softcopy)
+            # Get ISO Standard coordinates
+            iso_rect = coords["ISO Standard"]
+            print(f"🔍 [CERTIFICATE DEBUG] ISO Standard coordinates: {iso_rect}")
+            
+            # Use expanded ISO for display
+            iso_text = expanded_iso
+            iso_font_size = 30  # Standard font size for ISO Standard
+            iso_fontname = "Times-Bold"
+            iso_color = (0, 0, 0)
+            
+            # Perfect centering for ISO Standard - both horizontal and vertical (same as softcopy)
+            center_x = (iso_rect.x0 + iso_rect.x1) / 2
+            center_y = (iso_rect.y0 + iso_rect.y1) / 2 + iso_font_size/3  # Adjust for baseline
+            
+            # Calculate text width for centering
+            font_obj = fitz.Font(fontname=iso_fontname)
+            text_width = font_obj.text_length(iso_text, iso_font_size)
+            start_x = center_x - text_width / 2
+            
+            # Insert the ISO Standard text with centered positioning
+            safe_insert_text(
+                page,
+                (start_x, center_y),
+                iso_text,
+                fontsize=iso_font_size,
+                fontname=iso_fontname,
+                color=iso_color
+            )
+            
+            print(f"🔍 [CERTIFICATE DEBUG] ISO Standard final rendering: text='{iso_text}', font_size={iso_font_size}pt, center=({center_x:.1f}, {center_y:.1f})")
+            print(f"✅ [CERTIFICATE] ISO Standard field processed successfully")
+            
+            # Skip the normal field processing since we handled it above
+            continue
         
         # ✅ VALIDATION: Ensure only rendering fields are processed
         if field not in RENDERING_FIELDS:
@@ -1975,117 +2021,7 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             # PowerPoint-style centering with automatic font size reduction
             original_font_size = font_size
             
-            # ✅ ENHANCED: Optimized font calculation that prioritizes line break boundaries
-            def calculate_optimal_font_size_with_line_breaks(text, rect, fontname, template_type, min_font_size=4):
-                """
-                Enhanced font calculation that finds the minimum font size needed for the longest line,
-                then applies that font size to the entire field to respect line break boundaries.
-                """
-                if '\n' not in text and '\r\n' not in text:
-                    # No line breaks - use standard logic
-                    return calculate_standard_font_size(text, rect, fontname, template_type, min_font_size)
-                
-                print(f"🔍 [CERTIFICATE OPTIMIZATION] Line breaks detected - finding minimum font size for longest line")
-                
-                # Split by line breaks
-                text_lines = text.split('\n')
-                
-                # Step 1: Find the minimum font size needed for the LONGEST line
-                min_font_for_lines = []
-                
-                for line_idx, line in enumerate(text_lines):
-                    if not line.strip():
-                        min_font_for_lines.append(original_font_size)  # Empty line doesn't need font reduction
-                        continue
-                    
-                    # Find minimum font size for this specific line
-                    line_font_size = original_font_size
-                    font_obj = fitz.Font(fontname=fontname)
-                    
-                    while line_font_size >= min_font_size:
-                        line_width = font_obj.text_length(line.strip(), line_font_size)
-                        if line_width <= rect.width:
-                            break
-                        line_font_size -= 0.5
-                    
-                    min_font_for_lines.append(max(line_font_size, min_font_size))
-                    print(f"🔍 [CERTIFICATE OPTIMIZATION] Line {line_idx + 1} needs minimum font: {line_font_size:.1f}pt for '{line.strip()[:30]}...'")
-                
-                # Step 2: Use the LOWEST font size (the one needed for the longest line)
-                optimal_font_size = min(min_font_for_lines)
-                print(f"🔍 [CERTIFICATE OPTIMIZATION] Using lowest font size: {optimal_font_size:.1f}pt for entire field")
-                
-                # Step 3: Process all lines with this optimal font size
-                lines = []
-                total_lines = 0
-                
-                for line_idx, line in enumerate(text_lines):
-                    if not line.strip():
-                        lines.append("")  # Preserve empty line
-                        total_lines += 1
-                        continue
-                    
-                    # Check if this line fits without word wrapping at optimal font size
-                    font_obj = fitz.Font(fontname=fontname)
-                    line_width = font_obj.text_length(line.strip(), optimal_font_size)
-                    
-                    if line_width <= rect.width:
-                        # Line fits as-is - respect the line break
-                        lines.append(line.strip())
-                        total_lines += 1
-                        print(f"🔍 [CERTIFICATE OPTIMIZATION] Line {line_idx + 1} fits as-is at {optimal_font_size:.1f}pt")
-                    else:
-                        # Line still needs word wrapping - calculate how many lines it will create
-                        words = line.strip().split()
-                        wrapped_lines = 0
-                        current_line = ""
-                        
-                        for word in words:
-                            # Check if word starts with bullet point indicators (excluding '-' as per user request)
-                            is_bullet_point = any(word.startswith(indicator) for indicator in ['•', '>', '→', '▪', '▫', '*'])
-                            
-                            # If it's a bullet point and we have content, start a new line
-                            if is_bullet_point and current_line:
-                                lines.append(current_line)
-                                wrapped_lines += 1
-                                current_line = word
-                                continue
-                            
-                            test_line = current_line + (" " if current_line else "") + word
-                            
-                            if font_obj.text_length(test_line, optimal_font_size) <= rect.width:
-                                current_line = test_line
-                            else:
-                                if current_line:
-                                    lines.append(current_line)
-                                    wrapped_lines += 1
-                                current_line = word
-                        
-                        if current_line:
-                            lines.append(current_line)
-                            wrapped_lines += 1
-                        
-                        total_lines += wrapped_lines
-                        print(f"🔍 [CERTIFICATE OPTIMIZATION] Line {line_idx + 1} needs wrapping: {wrapped_lines} lines at {optimal_font_size:.1f}pt")
-                
-                # Step 4: Check if total height fits
-                if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
-                    line_height = optimal_font_size * 1.1
-                else:
-                    line_height = optimal_font_size * 1.2
-                
-                total_height = total_lines * line_height
-                
-                print(f"🔍 [CERTIFICATE DEBUG] Calculated height: {total_height:.1f}pt (lines: {total_lines}, line_height: {line_height:.1f}pt)")
-                print(f"🔍 [CERTIFICATE DEBUG] Available height: {rect.height:.1f}pt")
-                print(f"🔍 [CERTIFICATE DEBUG] Height utilization: {(total_height/rect.height)*100:.1f}%")
-                
-                if total_height <= rect.height:
-                    print(f"🔍 [CERTIFICATE OPTIMIZATION] ✅ Optimal font size {optimal_font_size:.1f}pt fits! (total lines: {total_lines})")
-                    return optimal_font_size, lines
-                else:
-                    print(f"⚠️ [CERTIFICATE OPTIMIZATION] Font size {optimal_font_size:.1f}pt still too large, using minimum: {min_font_size}pt")
-                    return min_font_size, lines
+            # ✅ ENHANCED: Use shared font calculation with binary search for line breaks
             
             def calculate_standard_font_size(text, rect, fontname, template_type, min_font_size):
                 """Standard font calculation for text without line breaks"""
@@ -2134,383 +2070,207 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                 
                 return font_size, lines
             
+        # ✅ USER CONTROL: Check if user wants to force font size (bypass optimization)
+        force_font_size = values.get("Force Font Size", "").strip().lower()
+        if force_font_size in ["true", "1", "yes", "force"]:
+            print(f"🔍 [CERTIFICATE DEBUG] User requested force font size: {font_size}pt (bypassing optimization)")
+            # Use the exact font size without optimization - just split text into lines
+            lines = text.split('\n') if '\n' in text or '\r\n' in text else [text]
+        else:
             # Use optimized font calculation
             min_font_size = 4  # Allow font size to go below 8pt if needed
-            font_size, lines = calculate_optimal_font_size_with_line_breaks(text, rect, fontname, template_type, min_font_size)
+            original_font_size = font_size
+            font_size, lines = calculate_optimal_font_size_with_line_breaks(text, rect, fontname, template_type, min_font_size, font_size)
+            print(f"🔍 [CERTIFICATE DEBUG] Binary search result: {font_size}pt (optimized from {original_font_size}pt)")
             
-            # ✅ ADDED: Apply Excel font size adjustment to scope
+            # ✅ USER CONTROL: Apply Force Font Size as relative adjustment
+            try:
+                force_adjustment = float(force_font_size) if force_font_size else 0
+                if force_adjustment != 0:
+                    original_optimized_font = font_size
+                    font_size += force_adjustment
+                    print(f"🔍 [CERTIFICATE DEBUG] Force Font Size adjustment: {original_optimized_font}pt + {force_adjustment}pt = {font_size}pt")
+            except (ValueError, TypeError):
+                print(f"🔍 [CERTIFICATE DEBUG] Invalid Force Font Size value: '{force_font_size}' - treating as 0")
+        
+        # ✅ UPDATED: Apply Excel font size adjustment AFTER optimization (user override)
+        if scope_font_size_adjustment != 0:
+            optimized_scope_font = font_size
             font_size += scope_font_size_adjustment
-            
-            # Calculate final total height for overflow checking
-            if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
-                line_height = font_size * 1.1
+            print(f"🔍 [CERTIFICATE DEBUG] Scope Font Size adjustment AFTER optimization: {optimized_scope_font}pt + {scope_font_size_adjustment}pt = {font_size}pt")
+        
+        # Calculate final total height for overflow checking
+        if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
+            line_height = font_size * 1.1
+        else:
+            line_height = font_size * 1.2
+        total_height = len(lines) * line_height
+
+        # ✅ NEW: Binary search in font_utils handles overflow optimization automatically
+        # No need for manual overflow handling - the shared function finds optimal font size
+
+        # ✅ ENHANCED: Use optimized lines from font calculation
+        # Replace all asterisks with bullet points for display in the optimized lines
+        optimized_lines = []
+        for line in lines:
+            if line:  # Non-empty line
+                display_line = line.replace('*', '•')
+                if line != display_line:
+                    print(f"🔄 [CERTIFICATE BULLET] Replaced '{line}' with '{display_line}'")
+                optimized_lines.append(display_line)
             else:
-                line_height = font_size * 1.2
-            total_height = len(lines) * line_height
+                optimized_lines.append(line)  # Preserve empty lines
+        
+        lines = optimized_lines
+        
 
-            # Check if we hit the minimum font size and still have overflow
-            if font_size == min_font_size and total_height > rect.height:
-                # Calculate how much overflow we have
-                overflow_amount = total_height - rect.height
-                overflow_percentage = (overflow_amount / rect.height) * 100
-                
-                # Add to overflow warnings
-                company_name = values.get("Company Name", "Unknown Company")
-                iso_standard = values.get("ISO Standard", "Unknown Standard")
-                
-                warning_msg = f"[OVERFLOW] {company_name} - {iso_standard}: Scope text exceeds coordinates by {overflow_percentage:.1f}% (font size reduced to {min_font_size}pt)"
-                overflow_warnings.append({
-                    "company_name": company_name,
-                    "iso_standard": iso_standard,
-                    "overflow_percentage": overflow_percentage,
-                    "final_font_size": min_font_size,
-                    "message": warning_msg
-                })
-                
-                print(warning_msg)
-                print(f"[OVERFLOW] Text will be truncated to fit within coordinates")
-                
-                # Force text to fit by truncating if necessary
-                max_lines = int(rect.height / min_font_size)
-                if len(lines) > max_lines:
-                    lines = lines[:max_lines]
-                    print(f"[OVERFLOW] Truncated to {max_lines} lines to fit coordinates")
 
-            # ✅ ENHANCED: Use optimized lines from font calculation
-            # Replace all asterisks with bullet points for display in the optimized lines
-            optimized_lines = []
-            for line in lines:
-                if line:  # Non-empty line
-                    display_line = line.replace('*', '•')
-                    if line != display_line:
-                        print(f"🔄 [CERTIFICATE BULLET] Replaced '{line}' with '{display_line}'")
-                    optimized_lines.append(display_line)
+        
+        # Calculate total height and position vertically based on template type
+        # Template-specific line spacing: 1.1 for large/logo, 1.2 for standard
+        if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
+            line_height = font_size * 1.1  # Tight spacing for large/logo templates
+        else:  # standard templates
+            line_height = font_size * 1.2  # Loose spacing for standard templates
+        total_height = len(lines) * line_height
+        
+        
+        # 🔍 DEBUG: Check for line breaks and template type
+        has_line_breaks = '\n' in text or '\r\n' in text
+        print(f"🔍 [CERTIFICATE DEBUG] Template type: {template_type}")
+        print(f"🔍 [CERTIFICATE DEBUG] Has line breaks: {has_line_breaks}")
+        print(f"🔍 [CERTIFICATE DEBUG] Rect coordinates: y0={rect.y0}, y1={rect.y1}, height={rect.height}")
+        print(f"🔍 [CERTIFICATE DEBUG] Text height from binary search: {total_height}pt")
+        print(f"🔍 [CERTIFICATE DEBUG] Font size from binary search: {font_size}pt")
+        
+        if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other"]:
+            # Large template: start from top with no margin
+            # If explicit line breaks, hard-code 7pt top offset (same as softcopy)
+            if has_line_breaks:
+                start_y = rect.y0 + 7 + scope_adjustment  # 7pt offset + Excel adjustment
+                print(f"🔍 [CERTIFICATE DEBUG] Large template with line breaks: start_y = {rect.y0} + 7 + {scope_adjustment} = {start_y}")
+            else:
+                start_y = rect.y0 + scope_adjustment  # Start at exact top of box + Excel adjustment
+                print(f"🔍 [CERTIFICATE DEBUG] Large template without line breaks: start_y = {rect.y0} + {scope_adjustment} = {start_y}")
+            
+            # Check if text would overflow bottom
+            if start_y + total_height > rect.y1:
+                # If overflow, adjust to fit within bounds
+                old_start_y = start_y
+                start_y = rect.y1 - total_height - 2  # 2pt margin from bottom
+                print(f"⚠️ [CERTIFICATE DEBUG] Overflow detected! Adjusted start_y from {old_start_y} to {start_y}")
+            else:
+                print(f"✅ [CERTIFICATE DEBUG] No overflow: start_y={start_y}, end_y={start_y + total_height}, rect.y1={rect.y1}")
+        else:
+            # Standard template: top-align when explicit line breaks; otherwise center
+            if has_line_breaks:
+                # Hard-code 7pt top offset for explicit line breaks (same as softcopy) + Excel adjustment
+                start_y = rect.y0 + 7 + scope_adjustment
+                print(f"🔍 [CERTIFICATE DEBUG] Standard template with line breaks: start_y = {rect.y0} + 7 + {scope_adjustment} = {start_y}")
+            else:
+                start_y = rect.y0 + (rect.height - total_height) / 2 + line_height/2 + scope_adjustment  # Adjust for baseline + Excel adjustment
+                print(f"🔍 [CERTIFICATE DEBUG] Standard template without line breaks: start_y = {rect.y0} + {(rect.height - total_height) / 2 + line_height/2 + scope_adjustment} = {start_y}")
+        
+        # ✅ SIMPLIFIED: Scope rendering with consistent centering
+        current_y = start_y
+        
+        # Render each line centered for consistent appearance
+        for i, line in enumerate(lines):
+            if not line.strip():  # Skip empty lines
+                current_y += line_height
+                continue
+            
+            # Check if this is the last non-empty line
+            is_last_line = i == len(lines) - 1 or all(not lines[j].strip() for j in range(i + 1, len(lines)))
+            
+            if is_last_line:
+                # ✅ LAST LINE: Center align for balanced appearance
+                center_x = (rect.x0 + rect.x1) / 2
+                
+                # ✅ ENHANCED: Use mixed format text rendering for bold detection
+                if '**' in line or '__' in line:
+                    # Calculate total width for centering
+                    segments = process_bold_text(line)
+                    total_width = 0
+                    for segment_text, _, _ in segments:
+                        if segment_text:
+                            font_obj = fitz.Font(fontname="Times-Bold" if "**" in segment_text or "__" in segment_text else "Times-Roman")
+                            total_width += font_obj.text_length(segment_text, font_size)
+                    
+                    start_x = center_x - total_width / 2
+                    render_mixed_format_text(page, (start_x, current_y), line, font_size, color)
                 else:
-                    optimized_lines.append(line)  # Preserve empty lines
+                    # Standard rendering for non-bold text
+                    font_obj = fitz.Font(fontname=fontname)
+                    text_width = font_obj.text_length(line, font_size)
+                    start_x = center_x - text_width / 2
+                    
+                    safe_insert_text(
+                        page,
+                        (start_x, current_y),
+                        line,
+                        fontsize=font_size,
+                        fontname=fontname,
+                        color=color
+                    )
+                # ✅ Safe string handling for debug output
+                safe_line = str(line) if line is not None else ""
+                print(f"🔍 [CERTIFICATE] Last line centered: '{safe_line[:50]}{'...' if len(safe_line) > 50 else ''}'")
+            else:
+                # ✅ INTERMEDIATE LINES: Center align for consistency
+                center_x = (rect.x0 + rect.x1) / 2
+                
+                # ✅ ENHANCED: Use mixed format text rendering for bold detection
+                if '**' in line or '__' in line:
+                    # Calculate total width for centering
+                    segments = process_bold_text(line)
+                    total_width = 0
+                    for segment_text, _, _ in segments:
+                        if segment_text:
+                            font_obj = fitz.Font(fontname="Times-Bold" if "**" in segment_text or "__" in segment_text else "Times-Roman")
+                            total_width += font_obj.text_length(segment_text, font_size)
+                    
+                    start_x = center_x - total_width / 2
+                    render_mixed_format_text(page, (start_x, current_y), line, font_size, color)
+                else:
+                    # Standard rendering for non-bold text
+                    font_obj = fitz.Font(fontname=fontname)
+                    text_width = font_obj.text_length(line, font_size)
+                    start_x = center_x - text_width / 2
+                    
+                    safe_insert_text(
+                        page,
+                        (start_x, current_y),
+                        line,
+                        fontsize=font_size,
+                        fontname=fontname,
+                        color=color
+                    )
+                
+                # ✅ Safe string handling for debug output
+                safe_line = str(line) if line is not None else ""
+                print(f"🔍 [CERTIFICATE] Line {i+1} centered: '{safe_line[:50]}{'...' if len(safe_line) > 50 else ''}'")
             
-            lines = optimized_lines
-            
-
-
-            
-            # Calculate total height and position vertically based on template type
+            # Update current_y consistently for all lines
             # Template-specific line spacing: 1.1 for large/logo, 1.2 for standard
             if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
-                line_height = font_size * 1.1  # Tight spacing for large/logo templates
+                current_y += font_size * 1.1  # Tight spacing for large/logo templates
             else:  # standard templates
-                line_height = font_size * 1.2  # Loose spacing for standard templates
-            total_height = len(lines) * line_height
-            
-            
-            if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other"]:
-                # Large template: start from top with no margin
-                start_y = rect.y0 + scope_adjustment  # ✅ ADDED: Apply Excel positioning adjustment
-                
-                # Check if text would overflow bottom
-                if start_y + total_height > rect.y1:
-                    # If overflow, adjust to fit within bounds
-                    start_y = rect.y1 - total_height - 2  # 2pt margin from bottom
-                else:
-                    pass
-            else:
-                # Standard template: keep current centering logic
-                start_y = rect.y0 + (rect.height - total_height) / 2 + line_height/2 + scope_adjustment  # Adjust for baseline + Excel adjustment
-            
-            # ✅ SIMPLIFIED: Scope rendering with consistent centering
-            current_y = start_y
-            
-            # Render each line centered for consistent appearance
-            for i, line in enumerate(lines):
-                if not line.strip():  # Skip empty lines
-                    current_y += line_height
-                    continue
-                
-                # Check if this is the last non-empty line
-                is_last_line = i == len(lines) - 1 or all(not lines[j].strip() for j in range(i + 1, len(lines)))
-                
-                if is_last_line:
-                    # ✅ LAST LINE: Center align for balanced appearance
-                    center_x = (rect.x0 + rect.x1) / 2
-                    
-                    # ✅ ENHANCED: Use mixed format text rendering for bold detection
-                    if '**' in line or '__' in line:
-                        # Calculate total width for centering
-                        segments = process_bold_text(line)
-                        total_width = 0
-                        for segment_text, _, _ in segments:
-                            if segment_text:
-                                font_obj = fitz.Font(fontname="Times-Bold" if "**" in segment_text or "__" in segment_text else "Times-Roman")
-                                total_width += font_obj.text_length(segment_text, font_size)
-                        
-                        start_x = center_x - total_width / 2
-                        render_mixed_format_text(page, (start_x, current_y), line, font_size, color)
-                    else:
-                        # Standard rendering for non-bold text
-                        font_obj = fitz.Font(fontname=fontname)
-                        text_width = font_obj.text_length(line, font_size)
-                        start_x = center_x - text_width / 2
-                        
-                        safe_insert_text(
-                            page,
-                            (start_x, current_y),
-                            line,
-                            fontsize=font_size,
-                            fontname=fontname,
-                            color=color
-                        )
-                    # ✅ Safe string handling for debug output
-                    safe_line = str(line) if line is not None else ""
-                    print(f"🔍 [CERTIFICATE] Last line centered: '{safe_line[:50]}{'...' if len(safe_line) > 50 else ''}'")
-                else:
-                    # ✅ INTERMEDIATE LINES: Center align for consistency
-                    center_x = (rect.x0 + rect.x1) / 2
-                    
-                    # ✅ ENHANCED: Use mixed format text rendering for bold detection
-                    if '**' in line or '__' in line:
-                        # Calculate total width for centering
-                        segments = process_bold_text(line)
-                        total_width = 0
-                        for segment_text, _, _ in segments:
-                            if segment_text:
-                                font_obj = fitz.Font(fontname="Times-Bold" if "**" in segment_text or "__" in segment_text else "Times-Roman")
-                                total_width += font_obj.text_length(segment_text, font_size)
-                        
-                        start_x = center_x - total_width / 2
-                        render_mixed_format_text(page, (start_x, current_y), line, font_size, color)
-                    else:
-                        # Standard rendering for non-bold text
-                        font_obj = fitz.Font(fontname=fontname)
-                        text_width = font_obj.text_length(line, font_size)
-                        start_x = center_x - text_width / 2
-                        
-                        safe_insert_text(
-                            page,
-                            (start_x, current_y),
-                            line,
-                            fontsize=font_size,
-                            fontname=fontname,
-                            color=color
-                        )
-                    
-                    # ✅ Safe string handling for debug output
-                    safe_line = str(line) if line is not None else ""
-                    print(f"🔍 [CERTIFICATE] Line {i+1} centered: '{safe_line[:50]}{'...' if len(safe_line) > 50 else ''}'")
-                
-                # Update current_y consistently for all lines
-                # Template-specific line spacing: 1.1 for large/logo, 1.2 for standard
-                if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
-                    current_y += font_size * 1.1  # Tight spacing for large/logo templates
-                else:  # standard templates
-                    current_y += font_size * 1.2  # Loose spacing for standard templates
-            
-            print(f"🎯 [SCOPE SUMMARY] Final rendering method: CENTERED")
-            print(f"🎯 [SCOPE SUMMARY] Scope field '{field}' processed successfully")
-            print(f"🔍 [CERTIFICATE DEBUG] ===== SCOPE ANALYSIS COMPLETE =====")
-            print(f"🔍 [CERTIFICATE DEBUG] Final coordinates used: start_y={start_y:.1f}, end_y={start_y + total_height:.1f}")
-            print(f"🔍 [CERTIFICATE DEBUG] Space utilization: {((start_y + total_height - rect.y0) / rect.height) * 100:.1f}%")
-            print(f"🔍 [CERTIFICATE DEBUG] Remaining space: {rect.y1 - (start_y + total_height):.1f}pt")
-            print(f"🔍 [CERTIFICATE DEBUG] ===== END SCOPE ANALYSIS =====")
-
+                current_y += font_size * 1.2  # Loose spacing for standard templates
         
-        elif field == "ISO Standard":
-            # ✅ ADDED: Preprocess ISO Standard using the mapping
-            try:
-                # Apply ISO standards mapping to expand short names to full versions
-                processed_text = expand_iso_standard(text)
-                print(f"🔍 [CERTIFICATE] ISO Standard processed: '{text}' -> '{processed_text}'")
-                text = processed_text
-            except Exception as e:
-                # If preprocessing fails, use text as-is
-                print(f"⚠️ [CERTIFICATE] ISO Standard preprocessing failed: {e}, using text as-is: '{text}'")
-            
-            # Perfect centering for ISO Standard - both horizontal and vertical
-            center_x = (rect.x0 + rect.x1) / 2
-            center_y = (rect.y0 + rect.y1) / 2 + font_size/3  # Adjust for baseline
-            
-            # ✅ ENHANCED: Use mixed format text rendering for bold detection
-            if '**' in text or '__' in text:
-                # Calculate total width for centering
-                segments = process_bold_text(text)
-                total_width = 0
-                for segment_text, _, _ in segments:
-                    if segment_text:
-                        font_obj = fitz.Font(fontname="Times-Bold" if "**" in segment_text or "__" in segment_text else "Times-Roman")
-                        total_width += font_obj.text_length(segment_text, font_size)
-                
-                start_x = center_x - total_width / 2
-                render_mixed_format_text(page, (start_x, center_y), text, font_size, color)
-            else:
-                # Standard rendering for non-bold text
-                font_obj = fitz.Font(fontname=fontname)
-                text_width = font_obj.text_length(text, font_size)
-                start_x = center_x - text_width / 2
-                
-                safe_insert_text(
-                    page,
-                    (start_x, center_y),
-                    text,
-                    fontsize=font_size,
-                    fontname=fontname,
-                    color=color
-                )
-            
-            # Print font size for ISO Standard
-            print(f"📏 [CERTIFICATE] ISO Standard: {font_size}pt (centered)")
-            
-            # ✅ MODIFIED: Render certification code below ISO Standard with different coordinates for non-accredited
-            try:
-                # Check accreditation status - use different coordinates for non-accredited
-                accreditation = (values.get("Accreditation") or values.get("accreditation") or "").strip().lower()
-                
-                # Always draw the certification code, but with different coordinates based on accreditation
-                # ✅ ADDED: Defensive check for values dictionary
-                if values is None:
-                    print(f"⚠️ [CERTIFICATE] Values dictionary is None - skipping certification code")
-                else:
-                    # Get the certification code for this ISO standard
-                    print(f"🔍 [CERTIFICATE] DEBUG: About to get certification code for ISO Standard: '{text}'")
-                    
-                    # ✅ ADDED: Defensive check for coords dictionary
-                    if coords is None:
-                        print(f"⚠️ [CERTIFICATE] Coords dictionary is None - skipping certification code")
-                    else:
-                        print(f"🔍 [CERTIFICATE] DEBUG: Available coordinates keys: {list(coords.keys())}")
-                        
-                        cert_code = get_iso_standard_code(text)
-                        print(f"🔍 [CERTIFICATE] DEBUG: get_iso_standard_code returned: '{cert_code}'")
-                        
-                        if cert_code:
-                            # ✅ ENHANCED: Use different coordinates based on accreditation status AND country
-                            country = (values.get("Country") or values.get("country") or "").strip()
-                            
-                            if country.lower() == "other":
-                                # Keep current logic for "Other" country
-                                if accreditation == "no":
-                                    # Non-accredited: Move code to the right
-                                    code_rect = fitz.Rect(335, 757, 390, 762)  # Updated coordinates
-                                    print(f"🔍 [CERTIFICATE] Other country, Non-accredited certificate - using right position")
-                                else:
-                                    # Accredited: Use original position
-                                    code_rect = coords["certification_code"]  # Original: (253, 757, 285, 762)
-                                    print(f"🔍 [CERTIFICATE] Other country, Accredited certificate - using standard position")
-                            else:
-                                # Non-"Other" country: Same x logic, but increase y by 8 points
-                                if accreditation == "no":
-                                    # Non-accredited: Move code to the right + down 8 points + 5pt left
-                                    code_rect = fitz.Rect(330, 765, 385, 770)  # y + 8, x - 5
-                                    print(f"🔍 [CERTIFICATE] Non-Other country, Non-accredited certificate - using right position + 8pt down + 5pt left")
-                                else:
-                                    # Accredited: Use original x position + down 8 points
-                                    code_rect = fitz.Rect(253, 765, 285, 770)  # y + 8
-                                    print(f"🔍 [CERTIFICATE] Non-Other country, Accredited certificate - using standard position + 8pt down")
-                            
-                            print(f"🔍 [CERTIFICATE] DEBUG: Using certification_code coordinates: {code_rect}")
-                            
-                            # Check if coordinates are within page boundaries
-                            page_rect = page.rect
-                            print(f"🔍 [CERTIFICATE] DEBUG: Page dimensions: {page_rect}")
-                            print(f"🔍 [CERTIFICATE] DEBUG: Code coordinates: x0={code_rect.x0}, y0={code_rect.y0}, x1={code_rect.x1}, y1={code_rect.y1}")
-                            
-                            if (code_rect.x0 >= 0 and code_rect.y0 >= 0 and 
-                                code_rect.x1 <= page_rect.width and code_rect.y1 <= page_rect.height):
-                                print(f"🔍 [CERTIFICATE] DEBUG: Coordinates are within page boundaries")
-                            else:
-                                print(f"⚠️ [CERTIFICATE] DEBUG: WARNING - Coordinates may be outside page boundaries!")
-                                print(f"⚠️ [CERTIFICATE] DEBUG: Page width: {page_rect.width}, height: {page_rect.height}")
-                                print(f"⚠️ [CERTIFICATE] DEBUG: Code rect: {code_rect}")
-                            
-                            # Insert certification code with specified font settings
-                            print(f"🔍 [CERTIFICATE] DEBUG: About to insert text '{cert_code}' at coordinates ({code_rect.x0}, {code_rect.y0})")
-                            
-                            # ✅ FIXED: Use reliable font that's always available in PyMuPDF
-                            reliable_font = "helv"  # Helvetica - always available in PyMuPDF
-                            
-                            safe_insert_text(
-                                page,
-                                (code_rect.x0, code_rect.y0),
-                                cert_code,
-                                fontsize=5,  # 5pt as specified
-                                fontname=reliable_font,  # Use reliable font
-                                color=(0, 0, 0)  # Black color
-                            )
-                            
-                            print(f"✅ [CERTIFICATE] Certification code '{cert_code}' rendered at coordinates {code_rect}")
-                            print(f"📏 [CERTIFICATE] Certification code: 5pt Times font")
-                        else:
-                            print(f"⚠️ [CERTIFICATE] No certification code found for ISO Standard: '{text}'")
-            except Exception as code_error:
-                print(f"⚠️ [CERTIFICATE] Error rendering certification code: {code_error}")
-                print(f"⚠️ [CERTIFICATE] Certificate will be generated without certification code")
-                import traceback
-                print(f"🔍 [CERTIFICATE] Full error traceback: {traceback.format_exc()}")
-
-    # ✅ ADDED: Process Extra Line field
-    extra_line_text = values.get("Extra Line", "").strip()
-    if extra_line_text:
-        print(f"🔍 [CERTIFICATE] Processing Extra Line: '{extra_line_text}'")
-        
-        # Calculate Extra Line position (0pt gap below scope)
-        # Use the same scope_rect that was used for scope rendering
-        if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other"]:
-            scope_rect = coords["Scope"]  # Single rectangle for large templates
-        else:
-            # For standard/logo templates, use the stored original coordinates
-            if estimated_lines >= 24:
-                scope_rect = original_scope_coords["long"]
-            else:
-                scope_rect = original_scope_coords["short"]
-        
-        # Calculate Extra Line position based on content length
-        scope_text = values.get("Scope", "")
-        scope_words = len(scope_text.split())
-        estimated_lines = max(1, (scope_words * 8) // 60)
-        
-        if estimated_lines < 24:
-            extra_line_y = scope_rect.y1 + 25  # 25pt gap below scope for <24 lines
-        else:
-            extra_line_y = scope_rect.y1  # 0pt gap - directly below scope for ≥24 lines
-        
-        # Create Extra Line rectangle
-        extra_line_rect = fitz.Rect(
-            scope_rect.x0,      # Same x0 as scope
-            extra_line_y,       # Dynamic gap below scope
-            scope_rect.x1,      # Same x1 as scope  
-            extra_line_y + 10   # 10pt height for text
-        )
-        
-        # Render Extra Line text with center alignment and bold font
-        if '**' in extra_line_text or '__' in extra_line_text:
-            # ✅ FIXED: Handle Unicode characters in mixed format text
-            try:
-                # Ensure text is properly encoded for PyMuPDF
-                safe_text = extra_line_text.encode('utf-8', errors='ignore').decode('utf-8')
-                render_mixed_format_text(page, (extra_line_rect.x0, extra_line_rect.y0), safe_text, 12, (0, 0, 0), extra_line_rect.width)
-            except Exception as e:
-                print(f"⚠️ [CERTIFICATE] Mixed format text error for Extra Line: {e}")
-                # Fallback: try with ASCII-safe text
-                ascii_text = ''.join(char if ord(char) < 128 else '?' for char in extra_line_text)
-                render_mixed_format_text(page, (extra_line_rect.x0, extra_line_rect.y0), ascii_text, 12, (0, 0, 0), extra_line_rect.width)
-        else:
-            # Center-aligned bold text rendering
-            center_x = (extra_line_rect.x0 + extra_line_rect.x1) / 2
-            font_obj = fitz.Font(fontname="Times-Bold")
-            text_width = font_obj.text_length(extra_line_text, 12)
-            start_x = center_x - text_width / 2
-            
-            # ✅ FIXED: Handle Unicode characters properly
-            # ✅ FIXED: Use safe_insert_text for Extra Line
-            safe_insert_text(
-                page,
-                (start_x, extra_line_rect.y0),
-                extra_line_text,
-                fontsize=12,
-                fontname="Times-Bold",
-                color=(0, 0, 0)
-            )
-        
-        print(f"🔍 [CERTIFICATE] Extra Line rendered at: {extra_line_rect}")
-    else:
-        print(f"🔍 [CERTIFICATE] No Extra Line - skipping")
+        print(f"🎯 [SCOPE SUMMARY] Final rendering method: CENTERED")
+        print(f"🎯 [SCOPE SUMMARY] Scope field '{field}' processed successfully")
+        print(f"🔍 [CERTIFICATE DEBUG] ===== SCOPE ANALYSIS COMPLETE =====")
+        print(f"🔍 [CERTIFICATE DEBUG] Binary search result: font_size={font_size:.1f}pt, lines={len(lines)}")
+        print(f"🔍 [CERTIFICATE DEBUG] Line height: {line_height:.1f}pt")
+        print(f"🔍 [CERTIFICATE DEBUG] Total text height: {total_height:.1f}pt")
+        print(f"🔍 [CERTIFICATE DEBUG] Available rect height: {rect.height:.1f}pt")
+        print(f"🔍 [CERTIFICATE DEBUG] Rect boundaries: y0={rect.y0:.1f}, y1={rect.y1:.1f}")
+        print(f"🔍 [CERTIFICATE DEBUG] Final coordinates used: start_y={start_y:.1f}, end_y={start_y + total_height:.1f}")
+        print(f"🔍 [CERTIFICATE DEBUG] Space utilization: {((start_y + total_height - rect.y0) / rect.height) * 100:.1f}%")
+        print(f"🔍 [CERTIFICATE DEBUG] Remaining space: {rect.y1 - (start_y + total_height):.1f}pt")
+        print(f"🔍 [CERTIFICATE DEBUG] Binary search working: {'YES' if font_size < 20 else 'NO'} (font reduced from 20pt to {font_size:.1f}pt)")
+        print(f"🔍 [CERTIFICATE DEBUG] ===== END SCOPE ANALYSIS =====")
 
     # ✅ ADDED: Insert logo if available and using any logo template type
     if logo_image and template_type.startswith("logo"):
