@@ -117,6 +117,8 @@ export async function POST(request: NextRequest) {
       sanitized = sanitized.replace(/_+/g, '_');
       // Remove leading/trailing underscores
       sanitized = sanitized.replace(/^_+|_+$/g, '');
+      // Remove all non-ASCII characters to prevent ByteString errors
+      sanitized = sanitized.replace(/[^\x00-\x7F]/g, '_');
       // Ensure filename is not empty
       if (!sanitized) {
         sanitized = "company";
@@ -126,10 +128,17 @@ export async function POST(request: NextRequest) {
     
     const cleanCompanyName = sanitizeFilename(company_name);
     
+    const downloadName = `${cleanCompanyName}_printable.pdf`;
+    
+    // Create ASCII-safe version for filename attribute (backward compatibility)
+    const asciiFilename = downloadName.replace(/[^\x00-\x7F]/g, '_');
+    // Encode UTF-8 version for filename* attribute
+    const encodedFilename = encodeURIComponent(downloadName);
+    
     // Return the PDF as a blob
     const responseHeaders = {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${cleanCompanyName}_printable.pdf"`,
+      'Content-Disposition': `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`,
     };
     
     return new NextResponse(pdfBlob, {

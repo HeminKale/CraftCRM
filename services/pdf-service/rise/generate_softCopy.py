@@ -27,6 +27,16 @@ def safe_insert_text(page, position, text, **kwargs):
     """Safely insert text handling Unicode characters that might cause ByteString errors."""
     try:
         # First try with the original text
+        # 🔍 DEBUG: Check for special dash characters
+        if '–' in text or '—' in text or '·' in text:
+            for i, char in enumerate(text):
+                if char in ['–', '—', '·', '-', '−']:
+                    print(f"🔍 [SAFE_INSERT] Found dash/dot at pos {i}: '{char}' (Unicode: {ord(char)}) in text: '{text[:50]}...'")
+        
+        # Replace en dash (U+2013) with regular hyphen for Times font compatibility
+        text = text.replace('–', '-')  # En dash → hyphen
+        text = text.replace('—', '-')  # Em dash → hyphen
+        
         page.insert_text(position, text, **kwargs)
     except Exception as e:
         if "ByteString" in str(e) or "character at index" in str(e):
@@ -1773,9 +1783,30 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
             center_x = (management_rect.x0 + management_rect.x1) / 2
             center_y = (management_rect.y0 + management_rect.y1) / 2 + 15/3  # Adjust for baseline
 
-            # Calculate text width for centering
+            # ✅ ADDED: Font size reduction logic to prevent x-coordinate overflow
+            management_font_size = 15  # Start with default font size
+            max_width = management_rect.width - 10  # Leave 5pt margin on each side (87.9 to 580 = 492.1pt width)
+            print(f"🔍 [SOFTCOPY] Management line overflow protection: max_width={max_width:.1f}pt")
+            
+            while management_font_size >= 8:  # Minimum font size
+                font_obj = fitz.Font(fontname="Times-BoldItalic")
+                text_width = font_obj.text_length(management_line, management_font_size)
+                
+                if text_width <= max_width:
+                    print(f"✅ [SOFTCOPY] Management line fits at {management_font_size}pt (width: {text_width:.1f}pt)")
+                    break  # Text fits!
+                
+                print(f"🔍 [SOFTCOPY] Management line too wide at {management_font_size}pt (width: {text_width:.1f}pt > {max_width:.1f}pt), reducing to {management_font_size - 0.5}pt")
+                management_font_size -= 0.5  # Reduce font size
+            
+            # Ensure minimum font size
+            if management_font_size < 8:
+                management_font_size = 8
+                print(f"⚠️ [SOFTCOPY] Management line forced to minimum font size 8pt")
+            
+            # Calculate text width for centering with final font size
             font_obj = fitz.Font(fontname="Times-BoldItalic")  # Use bold italic font
-            text_width = font_obj.text_length(management_line, 15)
+            text_width = font_obj.text_length(management_line, management_font_size)
             start_x = center_x - text_width / 2
 
             # Insert the management system text
@@ -1783,7 +1814,7 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 page,
                 (start_x, center_y),
                 management_line,
-                fontsize=15,
+                fontsize=management_font_size,  # Use calculated font size
                 fontname="Times-BoldItalic", # Bold italic font
                 color=(0, 0, 0)  # Black color
             )

@@ -832,6 +832,8 @@ async def generate_softcopy_endpoint(
             # Unix: / (forward slash)
             # Common: \r \n \t (line breaks, tabs)
             sanitized = re.sub(r'[<>:"|?*\\/\r\n\t]', '_', filename)
+            # Replace all non-ASCII characters (including em dash, en dash, etc.)
+            sanitized = re.sub(r'[^\x00-\x7F]', '_', sanitized)
             # Replace multiple underscores with single underscore
             sanitized = re.sub(r'_+', '_', sanitized)
             # Remove leading/trailing underscores
@@ -1188,6 +1190,8 @@ async def generate_printable(
             # Unix: / (forward slash)
             # Common: \r \n \t (line breaks, tabs)
             sanitized = re.sub(r'[<>:"|?*\\/\r\n\t]', '_', filename)
+            # Replace all non-ASCII characters (including em dash, en dash, etc.)
+            sanitized = re.sub(r'[^\x00-\x7F]', '_', sanitized)
             # Replace multiple underscores with single underscore
             sanitized = re.sub(r'_+', '_', sanitized)
             # Remove leading/trailing underscores

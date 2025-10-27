@@ -190,16 +190,25 @@ export async function POST(req: NextRequest) {
     const companyName = fields['Company Name'] || fields['Company'] || 'Unknown';
     const isoStandard = fields['ISO Standard'] || 'Unknown';
     
-    // Clean company name and ISO standard for filename
-    const cleanCompanyName = companyName.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, '_');
-    const cleanISOStandard = isoStandard.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, '_');
+    // Clean company name and ISO standard for filename - keep non-ASCII but handle HTTP headers
+    const cleanCompanyName = companyName
+      .replace(/[<>:"/\\|?*]/g, '_')  // Remove invalid filename characters
+      .replace(/\s+/g, '_');           // Replace spaces with underscores
+    const cleanISOStandard = isoStandard
+      .replace(/[<>:"/\\|?*]/g, '_')  // Remove invalid filename characters
+      .replace(/\s+/g, '_');           // Replace spaces with underscores
     
     const downloadName = `${cleanCompanyName}_${cleanISOStandard}_draft.pdf`;
 
+    // Create ASCII-safe version for filename attribute (backward compatibility)
+    const asciiFilename = downloadName.replace(/[^\x00-\x7F]/g, '_');
+    // Encode UTF-8 version for filename* attribute
+    const encodedFilename = encodeURIComponent(downloadName);
+    
     return new NextResponse(pdfBuffer, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="${downloadName}"`,
+        "Content-Disposition": `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`,
         "Cache-Control": "no-store",
       },
     });
