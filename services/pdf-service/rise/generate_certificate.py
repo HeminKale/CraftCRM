@@ -55,6 +55,16 @@ def safe_insert_text(page, position, text, **kwargs):
     """Safely insert text handling Unicode characters that might cause ByteString errors."""
     try:
         # First try with the original text
+        # 🔍 DEBUG: Check for special dash characters
+        if '–' in text or '—' in text or '·' in text:
+            for i, char in enumerate(text):
+                if char in ['–', '—', '·', '-', '−']:
+                    print(f"🔍 [SAFE_INSERT] Found dash/dot at pos {i}: '{char}' (Unicode: {ord(char)}) in text: '{text[:50]}...'")
+        
+        # Replace en dash (U+2013) with regular hyphen for Times font compatibility
+        text = text.replace('–', '-')  # En dash → hyphen
+        text = text.replace('—', '-')  # Em dash → hyphen
+        
         page.insert_text(position, text, **kwargs)
     except Exception as e:
         if "ByteString" in str(e) or "character at index" in str(e):
@@ -1913,10 +1923,30 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             center_x = (management_rect.x0 + management_rect.x1) / 2
             center_y = (management_rect.y0 + management_rect.y1) / 2 + 15/3  # Adjust for baseline
             
-            # Determine font size: 12pt for Spanish + ISO 45001, otherwise 15pt
+            # Determine initial font size: 12pt for Spanish + ISO 45001, otherwise 15pt
             management_font_size = 12 if (language == "s" and "45001" in expanded_iso) else 15
             
-            # Calculate text width for centering
+            # ✅ ADDED: Font size reduction logic to prevent x-coordinate overflow
+            max_width = management_rect.width - 10  # Leave 5pt margin on each side (87.9 to 580 = 492.1pt width)
+            print(f"🔍 [CERTIFICATE] Management line overflow protection: max_width={max_width:.1f}pt")
+            
+            while management_font_size >= 8:  # Minimum font size
+                font_obj = fitz.Font(fontname="Times-BoldItalic")
+                text_width = font_obj.text_length(management_line, management_font_size)
+                
+                if text_width <= max_width:
+                    print(f"✅ [CERTIFICATE] Management line fits at {management_font_size}pt (width: {text_width:.1f}pt)")
+                    break  # Text fits!
+                
+                print(f"🔍 [CERTIFICATE] Management line too wide at {management_font_size}pt (width: {text_width:.1f}pt > {max_width:.1f}pt), reducing to {management_font_size - 0.5}pt")
+                management_font_size -= 0.5  # Reduce font size
+            
+            # Ensure minimum font size
+            if management_font_size < 8:
+                management_font_size = 8
+                print(f"⚠️ [CERTIFICATE] Management line forced to minimum font size 8pt")
+            
+            # Calculate text width for centering with final font size
             font_obj = fitz.Font(fontname="Times-BoldItalic")  # Use bold italic font
             text_width = font_obj.text_length(management_line, management_font_size)
             start_x = center_x - text_width / 2
@@ -2289,6 +2319,70 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                     print(f"⚠️ [CERTIFICATE] Logo coordinates not found in logo_coords for template: {template_type}")
         except Exception as logo_insert_error:
             print(f"❌ [CERTIFICATE] Error inserting logo: {logo_insert_error}")
+
+    # ✅ ADDED: Process Extra Line field
+    extra_line_text = values.get("Extra Line", "").strip()
+    if extra_line_text:
+        print(f"🔍 [CERTIFICATE] Processing Extra Line: '{extra_line_text}'")
+        
+        # Calculate Extra Line position (0pt gap below scope)
+        # Use the same scope_rect that was used for scope rendering
+        if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_other_nonaccredited", "large_nonaccredited_other"]:
+            scope_rect = coords["Scope"]  # Single rectangle for large templates
+        else:
+            # For standard/logo templates, use the stored original coordinates
+            if estimated_lines >= 24:
+                scope_rect = original_scope_coords["long"]
+            else:
+                scope_rect = original_scope_coords["short"]
+        
+        # Calculate Extra Line position based on content length
+        scope_text = values.get("Scope", "")
+        scope_words = len(scope_text.split())
+        estimated_lines = max(1, (scope_words * 8) // 60)
+        
+        if estimated_lines < 24:
+            extra_line_y = scope_rect.y1 + 25  # 25pt gap below scope for <24 lines
+        else:
+            extra_line_y = scope_rect.y1  # 0pt gap - directly below scope for ≥24 lines
+        
+        # Create Extra Line rectangle
+        extra_line_rect = fitz.Rect(
+            scope_rect.x0,      # Same x0 as scope
+            extra_line_y,       # Dynamic gap below scope
+            scope_rect.x1,      # Same x1 as scope  
+            extra_line_y + 10   # 10pt height for text
+        )
+        
+        # Render Extra Line text with center alignment and bold font
+        try:
+            if '**' in extra_line_text or '__' in extra_line_text:
+                # Use mixed format rendering for bold text with center alignment
+                render_mixed_format_text(page, (extra_line_rect.x0, extra_line_rect.y0), extra_line_text, 12, (0, 0, 0), extra_line_rect.width)
+            else:
+                # Center-aligned bold text rendering
+                center_x = (extra_line_rect.x0 + extra_line_rect.x1) / 2
+                font_obj = fitz.Font(fontname="Times-Bold")
+                text_width = font_obj.text_length(extra_line_text, 12)
+                start_x = center_x - text_width / 2
+                
+                safe_insert_text(
+                    page,
+                    (start_x, extra_line_rect.y0),
+                    extra_line_text,
+                    fontsize=12,
+                    fontname="Times-Bold",
+                    color=(0, 0, 0)
+                )
+            
+            print(f"🔍 [CERTIFICATE] Extra Line rendered at: {extra_line_rect}")
+        except Exception as extra_line_error:
+            print(f"❌ [CERTIFICATE] Error rendering Extra Line: {extra_line_error}")
+            print(f"🔍 [CERTIFICATE] Extra Line coordinates: {extra_line_rect}")
+            print(f"🔍 [CERTIFICATE] Extra Line text: '{extra_line_text}'")
+            # Continue without Extra Line rather than failing completely
+    else:
+        print(f"🔍 [CERTIFICATE] No Extra Line - skipping")
 
     # ✅ ADDED: Robust return structure - always save and return
     try:

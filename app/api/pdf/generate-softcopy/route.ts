@@ -72,8 +72,8 @@ export async function POST(request: NextRequest) {
       "Address Adjustment": jsonData["Address Adjustment"]?.trim() || '',
       "Scope Font Size": jsonData["Scope Font Size"]?.trim() || '',
       "Scope Adjustment": jsonData["Scope Adjustment"]?.trim() || '',
-      // ✅ ADDED: Pass logo files to Python service
-      logo_lookup: logoLookup
+      // ✅ ADDED: Pass logo_lookup as empty object - logo files will be sent separately
+      logo_lookup: {}
     };
 
     // Debug logging for Address alignment and Language
@@ -124,11 +124,24 @@ export async function POST(request: NextRequest) {
 
     // The Python service returns a PDF file, not JSON
     const pdfBlob = await response.blob();
+    console.log('🔍 [SOFTCOPY] PDF blob received, size:', pdfBlob.size, 'bytes');
+    
+    // Clean company name for filename - keep non-ASCII for proper display
+    const cleanCompanyName = companyName
+      .replace(/[<>:"/\\|?*]/g, '_')  // Remove invalid filename characters
+      .replace(/\s+/g, '_');           // Replace spaces with underscores
+    
+    const downloadName = `${cleanCompanyName}_softcopy.pdf`;
+    
+    // Create ASCII-safe version for filename attribute (backward compatibility)
+    const asciiFilename = downloadName.replace(/[^\x00-\x7F]/g, '_');
+    // Encode UTF-8 version for filename* attribute
+    const encodedFilename = encodeURIComponent(downloadName);
     
     return new NextResponse(pdfBlob, {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${companyName.replace(/[<>:"/\\|?*]/g, '_').replace(/\s+/g, '_')}_softcopy.pdf"`
+        'Content-Disposition': `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`
       }
     });
 
@@ -136,7 +149,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { 
         error: error instanceof Error ? error.message : 'Failed to generate soft copy',
-        details: process.env.NODE_ENV === 'development' ? error : undefined
+        details: process.env.NODE_ENV === 'development' ? {
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        } : undefined
       },
       { status: 500 }
     );
