@@ -2,6 +2,9 @@ from docx import Document
 import fitz  # PyMuPDF
 from typing import Dict
 from .font_utils import calculate_optimal_font_size_with_line_breaks
+import unidecode
+import ftfy
+import chardet
 #CraftApp - Copy
 def parse_excel_adjustment(value):
     """Parse Excel adjustment value (position adjustment)"""
@@ -26,6 +29,20 @@ def parse_excel_font_size(value):
 def safe_insert_text(page, position, text, **kwargs):
     """Safely insert text handling Unicode characters that might cause ByteString errors."""
     try:
+        # 🔍 DEBUG: Analyze text at start
+        # Check for any apostrophe-like character (regular apostrophe or smart quotes)
+        has_regular_apostrophe = "'" in text  # U+0027
+        # Check for smart quotes using their Unicode code points
+        has_right_single_quote = '\u2019' in text  # RIGHT SINGLE QUOTATION MARK
+        has_left_single_quote = '\u2018' in text   # LEFT SINGLE QUOTATION MARK
+        has_apostrophe = has_regular_apostrophe or has_right_single_quote or has_left_single_quote
+        
+        print(f"🔍 [SAFE_INSERT] Analyzing text: '{text[:50]}...'")
+        print(f"🔍 [SAFE_INSERT] Regular apostrophe ('): {has_regular_apostrophe}")
+        print(f"🔍 [SAFE_INSERT] Right quote (U+2019): {has_right_single_quote}")
+        print(f"🔍 [SAFE_INSERT] Left quote (U+2018): {has_left_single_quote}")
+        print(f"🔍 [SAFE_INSERT] Has apostrophe-like character: {has_apostrophe}")
+        
         # First try with the original text
         # 🔍 DEBUG: Check for special dash characters
         if '–' in text or '—' in text or '·' in text:
@@ -33,15 +50,49 @@ def safe_insert_text(page, position, text, **kwargs):
                 if char in ['–', '—', '·', '-', '−']:
                     print(f"🔍 [SAFE_INSERT] Found dash/dot at pos {i}: '{char}' (Unicode: {ord(char)}) in text: '{text[:50]}...'")
         
+        # 🔍 DEBUG: Check for apostrophes (regular or smart quotes)
+        if has_apostrophe:
+            print(f"🔍 [SAFE_INSERT] ✓ Apostrophe-like character found in text!")
+            for i, char in enumerate(text):
+                if char in ["'", '\u2019', '\u2018']:
+                    print(f"🔍 [SAFE_INSERT] Found apostrophe at pos {i}: '{char}' (Unicode: {ord(char)}) in text: '{text[:50]}...'")
+        else:
+            print(f"🔍 [SAFE_INSERT] ✗ No apostrophe found in text")
+        
+        # ✅ ENHANCED: Detect special characters that need special handling
+        special_chars = ['–', '—', '·', '\u2019', '\u2018', '"', '"', '…', '€', '£', '¥', '©', '®', '™']
+        has_special_chars = any(char in text for char in special_chars)
+        
+        if has_special_chars:
+            print(f"🔍 [SAFE_INSERT] Special characters detected in text: '{text[:50]}...'")
+            
+            # Fix text encoding issues first
+            fixed_text = ftfy.fix_text(text)
+            if fixed_text != text:
+                print(f"🔍 [SAFE_INSERT] Text encoding fixed: '{text[:30]}...' → '{fixed_text[:30]}...'")
+                text = fixed_text
+            
+            # Use Helvetica font for better Unicode support
+            original_fontname = kwargs.get('fontname', 'Times-Roman')
+            if original_fontname.startswith('Times'):
+                kwargs['fontname'] = 'Helvetica' if original_fontname == 'Times-Roman' else 'Helvetica-Bold'
+                print(f"🔍 [SAFE_INSERT] Switched from {original_fontname} to {kwargs['fontname']} for special character compatibility")
+        elif has_apostrophe:
+            # Handle apostrophes specifically (regular or smart quotes)
+            original_fontname = kwargs.get('fontname', 'Times-Roman')
+            if original_fontname.startswith('Times'):
+                kwargs['fontname'] = 'Helvetica' if original_fontname == 'Times-Roman' else 'Helvetica-Bold'
+                print(f"🔍 [SAFE_INSERT] Switched from {original_fontname} to {kwargs['fontname']} for apostrophe compatibility")
+        
         # Replace problematic Unicode characters with ASCII equivalents for Times font compatibility
         text = text.replace('–', '-')  # En dash (U+2013) → hyphen
         text = text.replace('—', '-')  # Em dash (U+2015) → hyphen
         
         # Replace smart quotes with straight apostrophes for better font compatibility
-        text = text.replace(''', "'")  # Right single quotation mark (U+2019) → apostrophe
-        text = text.replace(''', "'")  # Left single quotation mark (U+2018) → apostrophe
-        text = text.replace('"', '"')  # Right double quotation mark (U+201D) → straight quote
-        text = text.replace('"', '"')  # Left double quotation mark (U+201C) → straight quote
+        text = text.replace('\u2019', "'")  # Right single quotation mark (U+2019) → apostrophe
+        text = text.replace('\u2018', "'")  # Left single quotation mark (U+2018) → apostrophe
+        text = text.replace('\u201D', '"')  # Right double quotation mark (U+201D) → straight quote
+        text = text.replace('\u201C', '"')  # Left double quotation mark (U+201C) → straight quote
         
         page.insert_text(position, text, **kwargs)
     except Exception as e:
@@ -53,8 +104,9 @@ def safe_insert_text(page, position, text, **kwargs):
                 page.insert_text(position, safe_text, **kwargs)
             except Exception as e2:
                 print(f"⚠️ [SOFTCOPY] UTF-8 encoding failed, using ASCII fallback: {e2}")
-                # Final fallback: ASCII-safe text
-                ascii_text = ''.join(char if ord(char) < 128 else '?' for char in text)
+                # Final fallback: Use unidecode for ASCII conversion
+                ascii_text = unidecode.unidecode(text)
+                print(f"🔍 [SAFE_INSERT] ASCII fallback text: '{ascii_text}'")
                 page.insert_text(position, ascii_text, **kwargs)
         else:
             # Re-raise if it's not a Unicode/ByteString error
