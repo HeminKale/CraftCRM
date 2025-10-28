@@ -61,9 +61,15 @@ def safe_insert_text(page, position, text, **kwargs):
                 if char in ['–', '—', '·', '-', '−']:
                     print(f"🔍 [SAFE_INSERT] Found dash/dot at pos {i}: '{char}' (Unicode: {ord(char)}) in text: '{text[:50]}...'")
         
-        # Replace en dash (U+2013) with regular hyphen for Times font compatibility
-        text = text.replace('–', '-')  # En dash → hyphen
-        text = text.replace('—', '-')  # Em dash → hyphen
+        # Replace problematic Unicode characters with ASCII equivalents for Times font compatibility
+        text = text.replace('–', '-')  # En dash (U+2013) → hyphen
+        text = text.replace('—', '-')  # Em dash (U+2015) → hyphen
+        
+        # Replace smart quotes with straight apostrophes for better font compatibility
+        text = text.replace(''', "'")  # Right single quotation mark (U+2019) → apostrophe
+        text = text.replace(''', "'")  # Left single quotation mark (U+2018) → apostrophe
+        text = text.replace('"', '"')  # Right double quotation mark (U+201D) → straight quote
+        text = text.replace('"', '"')  # Left double quotation mark (U+201C) → straight quote
         
         page.insert_text(position, text, **kwargs)
     except Exception as e:
