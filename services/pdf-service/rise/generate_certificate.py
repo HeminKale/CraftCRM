@@ -2187,6 +2187,55 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             font_size += scope_font_size_adjustment
             print(f"🔍 [CERTIFICATE DEBUG] Scope Font Size adjustment AFTER optimization: {optimized_scope_font}pt + {scope_font_size_adjustment}pt = {font_size}pt")
         
+        # ✅ HORIZONTAL OVERFLOW FIX: Re-wrap lines if font size increased
+        if scope_font_size_adjustment != 0:
+            print(f"🔍 [SCOPE HORIZONTAL] Checking horizontal overflow at increased font size: {font_size}pt")
+            
+            font_obj = fitz.Font(fontname=fontname)
+            rewrapped_lines = []
+            rewrap_count = 0
+            
+            for line_idx, line in enumerate(lines):
+                if not line.strip():
+                    # Empty line - preserve as is
+                    rewrapped_lines.append(line)
+                    continue
+                
+                # Check if line fits at new font size
+                line_width = font_obj.text_length(line, font_size)
+                
+                if line_width <= rect.width:
+                    # Line still fits - keep as is
+                    rewrapped_lines.append(line)
+                else:
+                    # Line overflows - re-wrap it
+                    rewrap_count += 1
+                    print(f"🔍 [SCOPE HORIZONTAL] Re-wrapping line {line_idx + 1}: '{line[:40]}...' (width: {line_width:.1f}pt > {rect.width:.1f}pt)")
+                    
+                    words = line.split()
+                    current_line = ""
+                    
+                    for word in words:
+                        test_line = current_line + (" " if current_line else "") + word
+                        test_width = font_obj.text_length(test_line, font_size)
+                        
+                        if test_width <= rect.width:
+                            current_line = test_line
+                        else:
+                            if current_line:
+                                rewrapped_lines.append(current_line)
+                            current_line = word
+                    
+                    if current_line:
+                        rewrapped_lines.append(current_line)
+            
+            # Update lines with re-wrapped content
+            original_line_count = len(lines)
+            lines = rewrapped_lines
+            new_line_count = len(lines)
+            
+            print(f"✅ [SCOPE HORIZONTAL] Re-wrapping complete: {original_line_count} → {new_line_count} lines ({rewrap_count} lines re-wrapped)")
+        
         # Calculate final total height for overflow checking
         if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
             line_height = font_size * 1.1
@@ -2259,10 +2308,57 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                 start_y = rect.y0 + (rect.height - total_height) / 2 + line_height/2 + scope_adjustment  # Adjust for baseline + Excel adjustment
                 print(f"🔍 [CERTIFICATE DEBUG] Standard template without line breaks: start_y = {rect.y0} + {(rect.height - total_height) / 2 + line_height/2 + scope_adjustment} = {start_y}")
         
+        # ✅ BULLET ALIGNMENT: Helper function to detect bullet lines
+        def is_bullet_line(line):
+            """Check if line starts with bullet character."""
+            if not line or not line.strip():
+                return False
+            first_word = line.strip().split()[0] if line.strip().split() else ""
+            return any(first_word.startswith(indicator) for indicator in ['•', '>', '→', '▪', '▫', '*'])
+        
+        # ✅ BULLET ALIGNMENT: Calculate smart left coordinate based on longest bullet sentence
+        bullet_char_width = 0
+        longest_bullet_line = None
+        longest_word_count = 0
+        font_obj = fitz.Font(fontname=fontname)
+        
+        # Find the longest bullet line by word count
+        for line in lines:
+            if is_bullet_line(line):
+                word_count = len(line.strip().split())
+                if word_count > longest_word_count:
+                    longest_word_count = word_count
+                    longest_bullet_line = line
+        
+        if longest_bullet_line:
+            # Calculate bullet character width for the longest line
+            first_word = longest_bullet_line.strip().split()[0]
+            bullet_char_width = font_obj.text_length(first_word + " ", font_size)
+            
+            # Calculate what the leftmost coordinate would be if we center the longest line
+            longest_line_width = font_obj.text_length(longest_bullet_line, font_size)
+            center_x = (rect.x0 + rect.x1) / 2
+            centered_leftmost = center_x - longest_line_width / 2
+            
+            # Use the leftmost coordinate from centering the longest line
+            bullet_left_coord = centered_leftmost
+            
+            print(f"🔍 [CERTIFICATE BULLET] Longest bullet line: '{longest_bullet_line[:50]}...' ({longest_word_count} words)")
+            print(f"🔍 [CERTIFICATE BULLET] Longest line width: {longest_line_width:.1f}pt")
+            print(f"🔍 [CERTIFICATE BULLET] Centered leftmost coordinate: {centered_leftmost:.1f}pt")
+            print(f"🔍 [CERTIFICATE BULLET] All bullets will align to: {bullet_left_coord:.1f}pt")
+        else:
+            bullet_left_coord = rect.x0 + bullet_char_width
+            print(f"🔍 [CERTIFICATE BULLET] No bullets found, using default left coordinate: {bullet_left_coord:.1f}pt")
+        
+        print(f"🔍 [SCOPE BULLETS] Total lines: {len(lines)}")
+        print(f"🔍 [SCOPE BULLETS] Bullet lines detected: {sum(1 for l in lines if is_bullet_line(l))}")
+        print(f"🔍 [SCOPE BULLETS] Non-bullet lines: {sum(1 for l in lines if not is_bullet_line(l) and l.strip())}")
+        
         # ✅ SIMPLIFIED: Scope rendering with consistent centering
         current_y = start_y
         
-        # Render each line centered for consistent appearance
+        # Render each line with bullet-aware alignment
         for i, line in enumerate(lines):
             if not line.strip():  # Skip empty lines
                 current_y += line_height
@@ -2271,7 +2367,36 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             # Check if this is the last non-empty line
             is_last_line = i == len(lines) - 1 or all(not lines[j].strip() for j in range(i + 1, len(lines)))
             
-            if is_last_line:
+            # NEW: Check if this is a bullet line
+            is_bullet = is_bullet_line(line)
+            
+            if is_bullet:
+                # BULLET LINE: Left-align with smart left coordinate from longest line centering
+                start_x = bullet_left_coord
+                
+                # Split bullet character from text
+                first_word = line.strip().split()[0]  # Bullet character (•, >, →, etc.)
+                rest_of_text = line[len(first_word):].strip()  # Text after bullet
+                
+                # Calculate bullet font size (30% larger than normal)
+                bullet_font_size = font_size * 1.3
+                
+                # Render bullet character with larger font
+                safe_insert_text(page, (start_x, current_y), first_word, 
+                               fontsize=bullet_font_size, fontname=fontname, color=color)
+                
+                # Calculate position for text after bullet
+                font_obj = fitz.Font(fontname=fontname)
+                bullet_width = font_obj.text_length(first_word + " ", bullet_font_size)
+                text_start_x = start_x + bullet_width
+                
+                # Render text with normal font size
+                if rest_of_text:
+                    safe_insert_text(page, (text_start_x, current_y), rest_of_text, 
+                                   fontsize=font_size, fontname=fontname, color=color)
+                
+                print(f"🔍 [CERTIFICATE BULLET] Line {i+1} left-aligned to {start_x:.1f}pt: '{first_word}' ({bullet_font_size:.1f}pt) + '{rest_of_text[:30]}...' ({font_size}pt)")
+            elif is_last_line:
                 # ✅ LAST LINE: Center align for balanced appearance
                 center_x = (rect.x0 + rect.x1) / 2
                 
