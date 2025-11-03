@@ -175,8 +175,8 @@ ISO_STANDARDS_MAPPING = {
     "27002": "ISO/IEC 27002:2022",
     "ISO/IEC 20000-1": "ISO/IEC 20000-1:2018",
     "20000-1": "ISO/IEC 20000-1:2018",
-    "ISO/IEC 22301": "ISO/IEC 22301:2019",
-    "22301": "ISO/IEC 22301:2019",
+    "ISO 22301": "ISO 22301:2019",
+    "22301": "ISO 22301:2019",
     
     # Manufacturing & Industrial
     "ISO 13485": "ISO 13485:2016",
@@ -221,7 +221,7 @@ ISO_STANDARDS_CODES = {
     "ISO 22000:2018": "CM-MS-7822",
     "ISO/IEC 27001:2022": "CM-MS-7820",
     "ISO 37001:2016": "CM-MS-7804",
-    "ISO/IEC 22301:2019": "CM-MS-7807",
+    "ISO 22301:2019": "CM-MS-7807",
     "ISO 50001:2018": "CM-MS-7814",
     "ISO 20001:2018": "CM-MS-7811",
 }
@@ -241,7 +241,7 @@ ISO_STANDARDS_DESCRIPTIONS = {
     "ISO/IEC 27001:2022": "Information Security Management System",
     "ISO/IEC 27002:2022": "Information Security Controls",
     "ISO/IEC 20000-1:2018": "IT Service Management System",
-    "ISO/IEC 22301:2019": "Business Continuity Management System",
+    "ISO 22301:2019": "Business Continuity Management System",
     "ISO 13485:2016": "Medical Devices – Quality Management System",
     "IATF 16949:2016": "Automotive Quality Management System",
     "ISO 3834-2:2021": "Quality requirements for fusion welding",
@@ -271,7 +271,7 @@ ISO_STANDARDS_DESCRIPTIONS_SPANISH = {
     "ISO/IEC 27001:2022": "Sistema de Gestión de Seguridad de la Información",
     "ISO/IEC 27002:2022": "Controles de Seguridad de la Información",
     "ISO/IEC 20000-1:2018": "Sistema de Gestión de Servicios de TI",
-    "ISO/IEC 22301:2019": "Sistema de Gestión de Continuidad del Negocio",
+    "ISO 22301:2019": "Sistema de Gestión de Continuidad del Negocio",
     "ISO 13485:2016": "Dispositivos Médicos – Sistema de Gestión de Calidad",
     "IATF 16949:2016": "Sistema de Calidad Automotriz",
     "ISO 3834-2:2021": "Requisitos de calidad para soldadura por fusión",
