@@ -72,17 +72,13 @@ def safe_insert_text(page, position, text, **kwargs):
                 print(f"🔍 [SAFE_INSERT] Text encoding fixed: '{text[:30]}...' → '{fixed_text[:30]}...'")
                 text = fixed_text
             
-            # Use Helvetica font for better Unicode support
-            original_fontname = kwargs.get('fontname', 'Times-Roman')
-            if original_fontname.startswith('Times'):
-                kwargs['fontname'] = 'Helvetica' if original_fontname == 'Times-Roman' else 'Helvetica-Bold'
-                print(f"🔍 [SAFE_INSERT] Switched from {original_fontname} to {kwargs['fontname']} for special character compatibility")
+            # ✅ CHANGED: Keep original font (Times-Bold) - special chars will be replaced with ASCII equivalents below
+            # No font switching needed since we replace special characters with ASCII equivalents
+            print(f"🔍 [SAFE_INSERT] Keeping original font '{kwargs.get('fontname', 'Times-Roman')}' - special chars will be replaced with ASCII equivalents")
         elif has_apostrophe:
-            # Handle apostrophes specifically (regular or smart quotes)
-            original_fontname = kwargs.get('fontname', 'Times-Roman')
-            if original_fontname.startswith('Times'):
-                kwargs['fontname'] = 'Helvetica' if original_fontname == 'Times-Roman' else 'Helvetica-Bold'
-                print(f"🔍 [SAFE_INSERT] Switched from {original_fontname} to {kwargs['fontname']} for apostrophe compatibility")
+            # ✅ CHANGED: Keep original font (Times-Bold) - apostrophes will be replaced with ASCII equivalents below
+            # No font switching needed since we replace apostrophes with ASCII equivalents
+            print(f"🔍 [SAFE_INSERT] Keeping original font '{kwargs.get('fontname', 'Times-Roman')}' - apostrophes will be replaced with ASCII equivalents")
         
         # Replace problematic Unicode characters with ASCII equivalents for Times font compatibility
         text = text.replace('–', '-')  # En dash (U+2013) → hyphen
@@ -1577,9 +1573,10 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
 
                 # Process Address using pre-processed lines with word wrapping
                 address_lines = []
+                max_address_width = rect.width - 10  # Leave margin
 
                 # Process each pre-processed address line with word wrapping
-                for processed_line in address_processed_lines:
+                for line_idx, processed_line in enumerate(address_processed_lines):
                     if not processed_line.strip():  # Empty line - preserve it
                         address_lines.append("")  # Add empty line to maintain spacing
                         continue
@@ -1587,19 +1584,33 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                     # Non-empty line - apply word wrapping
                     words = processed_line.split()
                     current_line = ""
+                    original_line_wrapped = False
 
                     for word in words:
                         test_line = current_line + (" " if current_line else "") + word
                         font_obj = fitz.Font(fontname=fontname)
                         test_width = font_obj.text_length(test_line, address_font_size)
-                        if test_width <= rect.width - 10:  # Leave margin
+                        if test_width <= max_address_width:  # Leave margin
                             current_line = test_line
                         else:
+                            # Line too wide - wrap it
                             if current_line:
+                                # Log the wrapped line before adding it
+                                line_width = font_obj.text_length(current_line, address_font_size)
+                                print(f"🔍 [SOFTCOPY ADDRESS WIDTH] Line wrapped at {address_font_size:.1f}pt: '{current_line[:50]}{'...' if len(current_line) > 50 else ''}' (width: {line_width:.1f}pt <= {max_address_width:.1f}pt)")
                                 address_lines.append(current_line)
+                                original_line_wrapped = True
+                            # Check if single word itself is too wide
+                            word_width = font_obj.text_length(word, address_font_size)
+                            if word_width > max_address_width:
+                                print(f"⚠️ [SOFTCOPY ADDRESS WIDTH] Single word exceeds width: '{word}' (width: {word_width:.1f}pt > {max_address_width:.1f}pt) - will be truncated")
                             current_line = word
 
                     if current_line:
+                        # Log final line of this processed segment only if it was wrapped or might overflow
+                        line_width = font_obj.text_length(current_line, address_font_size)
+                        if original_line_wrapped or line_width > max_address_width:
+                            print(f"🔍 [SOFTCOPY ADDRESS WIDTH] Final line segment at {address_font_size:.1f}pt: '{current_line[:50]}{'...' if len(current_line) > 50 else ''}' (width: {line_width:.1f}pt)")
                         address_lines.append(current_line)
 
                 # Calculate Address height
@@ -1614,6 +1625,23 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 # Check if Address fits in remaining space
                 if address_height <= remaining_height:
                     final_address_lines = address_lines.copy()
+                    
+                    # ✅ ADDED: Final width check for all address lines (only when solution found)
+                    font_obj = fitz.Font(fontname=fontname)
+                    overflow_detected = False
+                    print(f"🔍 [SOFTCOPY ADDRESS WIDTH] Final width check at {address_font_size:.1f}pt (max width: {max_address_width:.1f}pt):")
+                    for line_idx, line in enumerate(final_address_lines):
+                        if line.strip():  # Only check non-empty lines
+                            line_width = font_obj.text_length(line, address_font_size)
+                            if line_width > max_address_width:
+                                overflow_detected = True
+                                print(f"  ❌ Line {line_idx + 1} exceeds: '{line[:50]}{'...' if len(line) > 50 else ''}' (width: {line_width:.1f}pt > {max_address_width:.1f}pt)")
+                            else:
+                                print(f"  ✅ Line {line_idx + 1} fits: '{line[:50]}{'...' if len(line) > 50 else ''}' (width: {line_width:.1f}pt <= {max_address_width:.1f}pt)")
+                    
+                    if overflow_detected:
+                        print(f"⚠️ [SOFTCOPY ADDRESS WIDTH] ⚠️ WARNING: Some address lines exceed available width at {address_font_size:.1f}pt")
+                    
                     break
                 else:
                     print(f"❌ [SOFTCOPY] Address too tall: {address_height:.1f}pt > {remaining_height:.1f}pt, reducing font size")
