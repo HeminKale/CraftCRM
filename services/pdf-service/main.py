@@ -244,7 +244,6 @@ async def generate_certificate_endpoint(
             
             
             accreditation = field_data.get("Accreditation", "").lower().strip()
-            logo = field_data.get("Logo", "").lower().strip()
             country = field_data.get("Country", "").strip()  # ✅ ADDED: Country parameter
             
             # Calculate estimated lines for Scope (approximate calculation)
@@ -658,6 +657,8 @@ async def generate_softcopy_endpoint(
         field_data["Address Adjustment"] = soft_copy_data.get("Address Adjustment", "")
         field_data["Scope Font Size"] = soft_copy_data.get("Scope Font Size", "")
         field_data["Scope Adjustment"] = soft_copy_data.get("Scope Adjustment", "")
+        # ✅ ADDED: Add Logo field to field_data so it's available in generate_softCopy
+        field_data["Logo"] = logo if logo else ""
         
         
         # Determine template path and type
@@ -677,9 +678,10 @@ async def generate_softcopy_endpoint(
             estimated_lines = max(1, (scope_words * 8) // 60)  # 8 chars per word, 60 chars per line
             
             # Get Size, Accreditation, Logo, and Country from the form data
+            # Note: Logo is already extracted from Excel data (soft_copy_data) above, don't overwrite it
             size = values.get("Size", "").lower().strip()
             accreditation = values.get("Accreditation", "").lower().strip()
-            logo = values.get("Logo", "").lower().strip()
+            # logo is already set from soft_copy_data.get("Logo", "") on line 552, don't overwrite
             country = values.get("Country", "").strip()  # ✅ ADDED: Country parameter
             
             # ✅ NEW: Check for Extra Line presence FIRST (highest priority)
