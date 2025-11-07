@@ -5,6 +5,7 @@ from .font_utils import calculate_optimal_font_size_with_line_breaks
 import unidecode
 import ftfy
 import chardet
+from urllib.parse import quote
 #CraftApp - Copy
 def parse_excel_adjustment(value):
     """Parse Excel adjustment value (position adjustment)"""
@@ -130,18 +131,34 @@ def generate_certification_qr_code(cert_data: dict, size: int = 300) -> Image.Im
     # Using a temporary URL that works immediately (you can change this later)
     base_url = "https://salesqr.github.io/certificate-verification/"
     
-    # Build query parameters
+    # Build query parameters with URL encoding
     params = []
     if cert_data.get("certificate_number"):
-        params.append(f"cert={cert_data['certificate_number']}")
+        # URL-encode certificate number
+        encoded_cert = quote(str(cert_data['certificate_number']), safe='')
+        params.append(f"cert={encoded_cert}")
     if cert_data.get("company_name"):
-        params.append(f"company={cert_data['company_name']}")
+        # Clean company name: replace newlines with spaces, then URL-encode
+        company_name = str(cert_data['company_name'])
+        # Replace newlines and carriage returns with spaces
+        company_name = company_name.replace('\n', ' ').replace('\r', ' ')
+        # Collapse multiple spaces into single space
+        company_name = ' '.join(company_name.split())
+        # URL-encode company name (preserves &, spaces, etc. for proper display)
+        encoded_company = quote(company_name, safe='')
+        params.append(f"company={encoded_company}")
     if cert_data.get("certificate_standard"):
-        params.append(f"standard={cert_data['certificate_standard']}")
+        # URL-encode standard
+        encoded_standard = quote(str(cert_data['certificate_standard']), safe='')
+        params.append(f"standard={encoded_standard}")
     if cert_data.get("issue_date"):
-        params.append(f"issue={cert_data['issue_date']}")
+        # URL-encode issue date
+        encoded_issue = quote(str(cert_data['issue_date']), safe='')
+        params.append(f"issue={encoded_issue}")
     if cert_data.get("expiry_date"):
-        params.append(f"expiry={cert_data['expiry_date']}")
+        # URL-encode expiry date
+        encoded_expiry = quote(str(cert_data['expiry_date']), safe='')
+        params.append(f"expiry={encoded_expiry}")
     
     # Create the final URL
     if params:
@@ -860,24 +877,51 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
     
     # Process logo if specified and available
     logo_image = None
-    if logo_filename and logo_lookup and logo_filename in logo_lookup:
+    if logo_lookup and len(logo_lookup) > 0:
         try:
             # Convert uploaded file to PIL Image
             from PIL import Image
             import io
             
-            logo_file = logo_lookup[logo_filename]
-            if hasattr(logo_file, 'file'):
+            # Use exact match if available, otherwise try partial match, otherwise use first available
+            logo_file = None
+            if logo_filename and logo_filename in logo_lookup:
+                logo_file = logo_lookup[logo_filename]
+                print(f"🔍 [SOFTCOPY] Using exact logo match: {logo_filename}")
+            elif logo_filename:
+                # Try partial match (filename without extension)
+                for filename, file in logo_lookup.items():
+                    if logo_filename in filename or filename.split('.')[0] == logo_filename:
+                        logo_file = file
+                        print(f"🔍 [SOFTCOPY] Using partial logo match: '{logo_filename}' → '{filename}'")
+                        break
+            
+            if not logo_file:
+                # Use first available logo file, but check if it's a valid image format
+                for filename, file in logo_lookup.items():
+                    # Check if file has valid image extension
+                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+                        logo_file = file
+                        print(f"🔍 [SOFTCOPY] Using first valid image file: {filename}")
+                        break
+                
+                if not logo_file:
+                    print(f"⚠️ [SOFTCOPY] No valid image files found in logo_lookup: {list(logo_lookup.keys())}")
+            
+            if logo_file and hasattr(logo_file, 'file'):
                 # Reset file pointer
                 logo_file.file.seek(0)
                 # Read file content
                 logo_content = logo_file.file.read()
                 # Convert to PIL Image
                 logo_image = Image.open(io.BytesIO(logo_content))
+                print(f"✅ [SOFTCOPY] Logo image loaded successfully")
             else:
                 logo_image = None
+                print(f"⚠️ [SOFTCOPY] Logo file has no file attribute or is None")
         except Exception as logo_error:
             logo_image = None
+            print(f"❌ [SOFTCOPY] Error loading logo image: {logo_error}")
     else:
         logo_image = None
 
@@ -904,13 +948,13 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
     
     # Logo template coordinates (when Logo = "yes")
     logo_coords = {
-        "management_system": fitz.Rect(87.9, 185, 580, 226.6),  # Same as standard
-        "logo": fitz.Rect(87.9, 226.6, 580, 262.6),  # Logo area: below management_system, above company name
+        "management_system": fitz.Rect(87.9, 175, 580, 216.6),  # Shifted up by 10pt from standard
+        "logo": fitz.Rect(87.9, 206.6, 580, 242.6),  # Logo area: below management_system, above company name
         "Company Name and Address": fitz.Rect(87.9, 262.6, 580, 355),  # Lowered y-coordinates
-        "ISO Standard": fitz.Rect(194.9, 374, 460.3, 410),  # Lowered y-coordinates
+        "ISO Standard": fitz.Rect(194.9, 334, 460.3, 370),  # Same as standard (not lowered)
         "Scope": {
-            "short": fitz.Rect(87.9, 426, 580, 515),    # Lowered y-coordinates, y2 remains same
-            "long": fitz.Rect(87.9, 413, 580, 526)      # Lowered y-coordinates, y2 remains same
+            "short": fitz.Rect(87.9, 386, 580, 475),    # Updated scope coordinates for logo template
+            "long": fitz.Rect(87.9, 373, 580, 486)      # Updated scope coordinates for logo template
         },
         "certification_code": fitz.Rect(253, 757, 285, 762)  # ✅ UPDATED: Certification code coordinates
     }
@@ -1363,8 +1407,13 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                     else:
                         company_height = 30  # Less space when address is multi-line
                 else:
-                    # Logo template and others - use default 25pt (was 20pt)
-                    company_height = 25
+                    # Logo template - same height allocation as large template
+                    if address_lines_count == 1:
+                        company_height = 42  # Name +8, Address -5 (same as large)
+                    elif address_lines_count == 2:
+                        company_height = 33  # Name +8, Address -5 (same as large)
+                    else:  # 3+ lines
+                        company_height = 19  # Name 19pt, Address 37pt (same as large)
                 
                 print(f"🔍 [SOFTCOPY DEBUG] Multi-line company name: {address_lines_count} address lines, allocated {company_height}pt height")
             else:
@@ -1386,8 +1435,13 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                     else:
                         company_height = 30  # Less space when address is multi-line
                 else:
-                    # Logo template and others - use default 25pt (was 20pt)
-                    company_height = 25
+                    # Logo template - same height allocation as large template
+                    if address_lines_count == 1:
+                        company_height = 42  # Name +8, Address -5 (same as large)
+                    elif address_lines_count == 2:
+                        company_height = 33  # Name +8, Address -5 (same as large)
+                    else:  # 3+ lines
+                        company_height = 19  # Name 19pt, Address 37pt (same as large)
                 
                 print(f"🔍 [SOFTCOPY DEBUG] Single line company name: {address_lines_count} address lines, allocated {company_height}pt height")
 
@@ -1455,7 +1509,13 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                             else:
                                 test_company_height = 30  # Less space when address is multi-line
                         else:
-                            test_company_height = 25  # Logo template and others - use default 25pt
+                            # Logo template - same height allocation as large template
+                            if address_lines_count == 1:
+                                test_company_height = 42  # Name +8, Address -5 (same as large)
+                            elif address_lines_count == 2:
+                                test_company_height = 33  # Name +8, Address -5 (same as large)
+                            else:  # 3+ lines
+                                test_company_height = 19  # Name 19pt, Address 37pt (same as large)
                     else:
                         # Single line: dynamic height based on template and address lines
                         address_lines_count = len(address_processed_lines)
@@ -1471,7 +1531,13 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                             else:
                                 test_company_height = 30
                         else:
-                            test_company_height = 25
+                            # Logo template - same height allocation as large template
+                            if address_lines_count == 1:
+                                test_company_height = 42  # Name +8, Address -5 (same as large)
+                            elif address_lines_count == 2:
+                                test_company_height = 33  # Name +8, Address -5 (same as large)
+                            else:  # 3+ lines
+                                test_company_height = 19  # Name 19pt, Address 37pt (same as large)
                     if company_height <= max_company_height:
                         break
                     company_font_size -= 1
@@ -1492,23 +1558,37 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                         else:
                             company_height = 30  # Less space when address is multi-line
                     else:
-                        company_height = 25  # Logo template and others - use default 25pt
+                        # Logo template - same height allocation as large template
+                        if address_lines_count == 1:
+                            company_height = 42  # Name +8, Address -5 (same as large)
+                        elif address_lines_count == 2:
+                            company_height = 33  # Name +8, Address -5 (same as large)
+                        else:  # 3+ lines
+                            company_height = 19  # Name 19pt, Address 37pt (same as large)
                 else:
                     # Single line: dynamic height based on template and address lines
                     address_lines_count = len(address_processed_lines)
                     
                     if original_template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_other_nonaccredited", "large_nonaccredited_other"]:
                         if address_lines_count == 1:
-                            company_height = 34
-                        else:
-                            company_height = 25
+                            company_height = 42  # Name +8, Address -5 (same as large)
+                        elif address_lines_count == 2:
+                            company_height = 33  # Name +8, Address -5 (same as large)
+                        else:  # 3+ lines
+                            company_height = 19  # Name 19pt, Address 37pt (same as large)
                     elif original_template_type in ["standard", "standard_eco", "standard_nonaccredited", "standard_other", "standard_other_eco", "standard_nonaccredited_other"]:
                         if address_lines_count == 1:
                             company_height = 45
                         else:
                             company_height = 30
                     else:
-                        company_height = 25
+                        # Logo template - same height allocation as large template
+                        if address_lines_count == 1:
+                            company_height = 42  # Name +8, Address -5 (same as large)
+                        elif address_lines_count == 2:
+                            company_height = 33  # Name +8, Address -5 (same as large)
+                        else:  # 3+ lines
+                            company_height = 19  # Name 19pt, Address 37pt (same as large)
                 remaining_height = rect.height - company_height
                 
                 print(f"🔍 [SOFTCOPY DEBUG] Adaptive mode: Company font reduced from {original_company_font}pt to {company_font_size}pt")
@@ -1545,23 +1625,33 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                             else:
                                 company_height = 30  # Less space when address is multi-line
                         else:
-                            company_height = 20  # Logo template and others - use default 20pt
+                            # Logo template - same height allocation as large template (fallback mode)
+                            if address_lines_count == 1:
+                                company_height = 42  # Name +8, Address -5 (same as large)
+                            else:
+                                company_height = 20  # Less space when address is multi-line (same as large)
                     else:
                         # Single line: dynamic height based on template and address lines
                         address_lines_count = len(address_processed_lines)
                         
                         if original_template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_other_nonaccredited", "large_nonaccredited_other"]:
                             if address_lines_count == 1:
-                                company_height = 34
-                            else:
-                                company_height = 20
+                                company_height = 42  # Name +8, Address -5 (same as large)
+                            elif address_lines_count == 2:
+                                company_height = 33  # Name +8, Address -5 (same as large)
+                            else:  # 3+ lines
+                                company_height = 19  # Name 19pt, Address 37pt (same as large)
                         elif original_template_type in ["standard", "standard_eco", "standard_nonaccredited", "standard_other", "standard_other_eco", "standard_nonaccredited_other"]:
                             if address_lines_count == 1:
                                 company_height = 45
                             else:
                                 company_height = 30
                         else:
-                            company_height = 20
+                            # Logo template - same height allocation as large template (fallback mode)
+                            if address_lines_count == 1:
+                                company_height = 42  # Name +8, Address -5 (same as large)
+                            else:
+                                company_height = 20  # Less space when address is multi-line (same as large)
                     remaining_height = rect.height - company_height
                     
                     print(f"🔍 [SOFTCOPY DEBUG] Fallback: Company {company_font_size:.1f}pt, Address {address_font_size:.1f}pt")
@@ -2206,8 +2296,8 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
                 line_height = font_size * 1.2  # Loose spacing for standard templates
             total_height = len(lines) * line_height
             
-            if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_other_nonaccredited", "large_nonaccredited_other"]:
-                # Large template: start from top with no margin + Excel adjustment
+            if original_template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_other_nonaccredited", "large_nonaccredited_other", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
+                # Large/Logo template: start from top with no margin + Excel adjustment
                 start_y = rect.y0 + scope_adjustment
                 
                 # Check if text would overflow bottom
@@ -2464,8 +2554,8 @@ def generate_softcopy(base_pdf_path: str, output_pdf_path: str, values: Dict[str
         except Exception as e:
             print(f"❌ [SOFTCOPY] Error inserting logo: {e}")
 
-    # ✅ UPDATED: Insert logo if available and using logo template
-    if logo_image and template_type == "logo":
+    # ✅ UPDATED: Insert logo if available and using any logo template type
+    if logo_image and template_type.startswith("logo"):
         try:
             # Get logo coordinates from logo_coords
             logo_rect = logo_coords.get("logo")

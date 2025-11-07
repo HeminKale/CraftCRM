@@ -977,13 +977,13 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
     
     # Logo template coordinates (when Logo = "yes")
     logo_coords = {
-        "management_system": fitz.Rect(87.9, 185, 580, 226.6),  # Same as standard
-        "logo": fitz.Rect(87.9, 226.6, 580, 262.6),  # Logo area: below management_system, above company name
+        "management_system": fitz.Rect(87.9, 175, 580, 216.6),  # Shifted up by 10pt from standard
+        "logo": fitz.Rect(87.9, 206.6, 580, 242.6),  # Logo area: below management_system, above company name
         "Company Name and Address": fitz.Rect(87.9, 262.6, 580, 355),  # Lowered y-coordinates
-        "ISO Standard": fitz.Rect(194.9, 374, 460.3, 410),  # Lowered y-coordinates
+        "ISO Standard": fitz.Rect(194.9, 334, 460.3, 370),  # Same as standard (not lowered)
         "Scope": {
-            "short": fitz.Rect(87.9, 426, 580, 515),    # Lowered y-coordinates, y2 remains same
-            "long": fitz.Rect(87.9, 413, 580, 526)      # Lowered y-coordinates, y2 remains same
+            "short": fitz.Rect(87.9, 386, 580, 475),    # Updated scope coordinates for logo template
+            "long": fitz.Rect(87.9, 373, 580, 486)      # Updated scope coordinates for logo template
         },
         "certification_code": fitz.Rect(253, 757, 285, 762)  # ✅ UPDATED: Certification code coordinates
     }
@@ -1671,7 +1671,13 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                     else:
                         company_height = 30  # Less space when address is multi-line
                 else:
-                    company_height = 25  # Logo template and others
+                    # Logo template - same height allocation as large template
+                    if address_lines_count == 1:
+                        company_height = 42  # Name +8, Address -5 (same as large)
+                    elif address_lines_count == 2:
+                        company_height = 33  # Name +8, Address -5 (same as large)
+                    else:  # 3+ lines
+                        company_height = 19  # Name 19pt, Address 37pt (same as large)
             else:
                 # Single line company: dynamic height based on template and address lines
                 if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "large_nonaccredited_other"]:
@@ -1687,7 +1693,13 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
                     else:
                         company_height = 30
                 else:
-                    company_height = 25
+                    # Logo template - same height allocation as large template
+                    if address_lines_count == 1:
+                        company_height = 42  # Name +8, Address -5 (same as large)
+                    elif address_lines_count == 2:
+                        company_height = 33  # Name +8, Address -5 (same as large)
+                    else:  # 3+ lines
+                        company_height = 19  # Name 19pt, Address 37pt (same as large)
             
             print(f"🔍 [CERTIFICATE DEBUG] Company height allocation: {company_height}pt (company lines: {len(final_company_lines)}, address lines: {address_lines_count}, template: {template_type})")
             
@@ -2308,15 +2320,15 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
         print(f"🔍 [CERTIFICATE DEBUG] Text height from binary search: {total_height}pt")
         print(f"🔍 [CERTIFICATE DEBUG] Font size from binary search: {font_size}pt")
         
-        if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other"]:
-            # Large template: start from top with no margin
+        if template_type in ["large", "large_eco", "large_nonaccredited", "large_other", "large_other_eco", "large_nonaccredited_other", "logo", "logo_nonaccredited", "logo_other", "logo_other_nonaccredited"]:
+            # Large/Logo template: start from top with no margin
             # If explicit line breaks, hard-code 7pt top offset (same as softcopy)
             if has_line_breaks:
                 start_y = rect.y0 + 7 + scope_adjustment  # 7pt offset + Excel adjustment
-                print(f"🔍 [CERTIFICATE DEBUG] Large template with line breaks: start_y = {rect.y0} + 7 + {scope_adjustment} = {start_y}")
+                print(f"🔍 [CERTIFICATE DEBUG] Large/Logo template with line breaks: start_y = {rect.y0} + 7 + {scope_adjustment} = {start_y}")
             else:
                 start_y = rect.y0 + scope_adjustment  # Start at exact top of box + Excel adjustment
-                print(f"🔍 [CERTIFICATE DEBUG] Large template without line breaks: start_y = {rect.y0} + {scope_adjustment} = {start_y}")
+                print(f"🔍 [CERTIFICATE DEBUG] Large/Logo template without line breaks: start_y = {rect.y0} + {scope_adjustment} = {start_y}")
             
             # Check if text would overflow bottom
             if start_y + total_height > rect.y1:
