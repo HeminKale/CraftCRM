@@ -912,28 +912,48 @@ def generate_certificate(base_pdf_path: str, output_pdf_path: str, values: Dict[
             
             # Use exact match if available, otherwise try partial match, otherwise use first available
             logo_file = None
-            if logo_filename and logo_filename in logo_lookup:
-                logo_file = logo_lookup[logo_filename]
-                print(f"🔍 [CERTIFICATE] Using exact logo match: {logo_filename}")
-            elif logo_filename:
-                # Try partial match (filename without extension)
-                for filename, file in logo_lookup.items():
-                    if logo_filename in filename or filename.split('.')[0] == logo_filename:
-                        logo_file = file
-                        print(f"🔍 [CERTIFICATE] Using partial logo match: '{logo_filename}' → '{filename}'")
-                        break
+            matched_filename = None
             
+            if logo_filename:
+                # Try exact match first (case-insensitive)
+                logo_filename_lower = logo_filename.lower()
+                for filename, file in logo_lookup.items():
+                    if filename.lower() == logo_filename_lower:
+                        logo_file = file
+                        matched_filename = filename
+                        print(f"✅ [CERTIFICATE] Using exact logo match: '{logo_filename}' → '{filename}'")
+                        break
+                
+                # If no exact match, try partial match (filename without extension or contains)
+                if not logo_file:
+                    for filename, file in logo_lookup.items():
+                        filename_lower = filename.lower()
+                        logo_base = logo_filename_lower.split('.')[0]
+                        filename_base = filename_lower.split('.')[0]
+                        
+                        # Check if logo_filename is in filename or base names match
+                        if logo_filename_lower in filename_lower or filename_base == logo_base:
+                            logo_file = file
+                            matched_filename = filename
+                            print(f"✅ [CERTIFICATE] Using partial logo match: '{logo_filename}' → '{filename}'")
+                            break
+            
+            # Only use fallback if no match was found
             if not logo_file:
                 # Use first available logo file, but check if it's a valid image format
                 for filename, file in logo_lookup.items():
                     # Check if file has valid image extension
                     if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
                         logo_file = file
-                        print(f"🔍 [CERTIFICATE] Using first valid image file: {filename}")
+                        matched_filename = filename
+                        print(f"⚠️ [CERTIFICATE] No match found for '{logo_filename}', using first valid image file: '{filename}'")
                         break
                 
                 if not logo_file:
                     print(f"⚠️ [CERTIFICATE] No valid image files found in logo_lookup: {list(logo_lookup.keys())}")
+            else:
+                # Log which file was actually used
+                print(f"🔍 [CERTIFICATE] Selected logo file: '{matched_filename}' (requested: '{logo_filename}')")
             
             if logo_file and hasattr(logo_file, 'file'):
                 # Reset file pointer
