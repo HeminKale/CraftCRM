@@ -341,6 +341,10 @@ ISO_STANDARDS_MAPPING = {
     # Other Notable Standards
     "ISO 37001": "ISO 37001:2016",
     "37001": "ISO 37001:2016",
+    "37001:2016": "ISO 37001:2016",
+"37001: 2016": "ISO 37001:2016",
+"37001:2025": "ISO 37001:2025",
+"37001: 2025": "ISO 37001:2025",
     "ISO 19600": "ISO 19600:2014",
     "19600": "ISO 19600:2014",
     "ISO 29993": "ISO 29993:2017",
@@ -355,6 +359,7 @@ ISO_STANDARDS_CODES = {
     "ISO 22000:2018": "CM-MS-7822",
     "ISO/IEC 27001:2022": "CM-MS-7820",
     "ISO 37001:2016": "CM-MS-7804",
+    "ISO 37001:2025": "CM-MS-7804",
     "ISO 22301:2019": "CM-MS-7807",
     "ISO 50001:2018": "CM-MS-7814",
     "ISO 20001:2018": "CM-MS-7811",
@@ -386,6 +391,7 @@ ISO_STANDARDS_DESCRIPTIONS = {
     "ISO 28000:2022": "Security Management Systems for Supply Chain",
     "AS 9100D:2016": "Aerospace Quality (based on ISO 9001:2015)",
     "ISO 37001:2016": "Anti-bribery Management System",
+    "ISO 37001:2025": "Anti-bribery Management System",
     "ISO 19600:2014": "Compliance Management System",
     "ISO 29993:2017": "Learning Services",
 }
@@ -416,6 +422,7 @@ ISO_STANDARDS_DESCRIPTIONS_SPANISH = {
     "ISO 28000:2022": "Sistemas de Gestión de Seguridad para la Cadena de Suministro",
     "AS 9100D:2016": "Calidad Aeroespacial (basado en ISO 9001:2015)",
     "ISO 37001:2016": "el Sistema de gestión antisoborno",
+    "ISO 37001:2025": "el Sistema de gestión antisoborno",
     "ISO 19600:2014": "Sistema de Gestión de Cumplimiento",
     "ISO 29993:2017": "Servicios de Aprendizaje",
 }
