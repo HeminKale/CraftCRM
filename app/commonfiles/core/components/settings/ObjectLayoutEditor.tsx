@@ -189,7 +189,7 @@ export default function ObjectLayoutEditor({
       }
 
       setLayoutBlocks(data || []);
-      
+
       // Extract custom sections from layout blocks, excluding system sections
       if (data) {
         const systemSections = ['details', 'related_lists'];
@@ -198,10 +198,27 @@ export default function ObjectLayoutEditor({
           .filter((section): section is string => section && !systemSections.includes(section))
         ));
         setCustomLayoutSections(customSections);
-        
+
         // Set section order: system sections first, then custom sections
         const allSections = [...systemSections, ...customSections];
         setSectionOrder(allSections);
+
+        // Restore section types for custom sections by inferring from their blocks.
+        // Without this, refreshing resets sectionTypes to only system defaults and
+        // custom sections appear non-selectable (sectionType === undefined → canAcceptFields = false).
+        const restoredTypes: Record<string, SectionType> = {
+          details: 'field',
+          related_lists: 'related_list',
+        };
+        for (const section of customSections) {
+          const blocks = data.filter(b => b.section === section);
+          const hasFields = blocks.some(b => b.block_type === 'field');
+          const hasRelatedLists = blocks.some(b => b.block_type === 'related_list');
+          if (hasFields && hasRelatedLists) restoredTypes[section] = 'mixed';
+          else if (hasRelatedLists) restoredTypes[section] = 'related_list';
+          else restoredTypes[section] = 'field'; // empty sections default to field
+        }
+        setSectionTypes(restoredTypes);
       }
     } catch (err: any) {
       console.error('Error fetching layout blocks:', err);
@@ -411,31 +428,8 @@ export default function ObjectLayoutEditor({
     [],
   );
 
-  const addFieldToLayout = (field: FieldMetadata, section: string) => {
-    console.log('🔧 === ADD FIELD TO LAYOUT CALLED ===');
-    console.log('🔧 Field:', field);
-    console.log('🔧 Section:', section);
-    console.log('🔧 Selected object:', selectedObject);
-    console.log('🔧 Current layout blocks:', layoutBlocks);
-    
-    // Validate inputs
-    if (!field || !field.id || !field.display_label) {
-      console.log('❌ Field validation failed');
-      setMessage({ 
-        text: 'Invalid field data. Please try again.', 
-        type: 'error' 
-      });
-      return;
-    }
-    
-    if (!section || !selectedObject) {
-      console.log('❌ Section or object validation failed');
-      setMessage({ 
-        text: 'Invalid section or object selection.', 
-        type: 'error' 
-      });
-      return;
-    }
+  const addFieldToLayout = useCallback((field: FieldMetadata, section: string) => {
+    if (!field?.id || !field.display_label || !section || !selectedObject) return;
 
     const newBlock: LayoutBlock = {
       id: `temp-${Date.now()}-${Math.random()}`,
@@ -444,21 +438,15 @@ export default function ObjectLayoutEditor({
       field_id: field.id,
       label: field.display_label,
       section: section,
-      display_order: layoutBlocks.filter(b => b.section === section).length,
+      display_order: 0, // will be recalculated on save
       width: field.width || 'half',
       is_visible: true,
       tab_type: 'main',
       display_columns: []
     };
-    
-    console.log('🔧 New block created:', newBlock);
-    setLayoutBlocks(prev => {
-      const newBlocks = [...prev, newBlock];
-      console.log('🔧 Updated layout blocks:', newBlocks);
-      return newBlocks;
-    });
-    console.log('✅ Field added successfully');
-  };
+
+    setLayoutBlocks(prev => [...prev, newBlock]);
+  }, [selectedObject]);
 
   const getAvailableRelatedLists = useCallback(() => {
     // Get related lists that are not already in the layout
@@ -487,94 +475,46 @@ export default function ObjectLayoutEditor({
     );
   }, [layoutBlocks]);
 
-  const addRelatedListToLayout = (relatedList: RelatedList, section: string) => {
-    // Validate inputs
-    if (!relatedList || !relatedList.id) {
-      setMessage({ 
-        text: 'Invalid related list data. Please try again.', 
-        type: 'error' 
-      });
-      return;
-    }
-    
-    if (!section || !selectedObject) {
-      setMessage({ 
-        text: 'Invalid section or object selection.', 
-        type: 'error' 
-      });
-      return;
-    }
+  const addRelatedListToLayout = useCallback((relatedList: RelatedList, section: string) => {
+    if (!relatedList?.id || !section || !selectedObject) return;
 
-    // Check if this related list is already in the layout
     const isAlreadyInLayout = layoutBlocks.some(
-      block => block.block_type === 'related_list' && block.related_list_id === relatedList.id
+      b => b.block_type === 'related_list' && b.related_list_id === relatedList.id
     );
-    
     if (isAlreadyInLayout) {
       setMessage({ text: `Related list "${relatedList.label}" is already in the layout.`, type: 'info' });
       return;
     }
 
-    let friendlyLabel = relatedList.label;
-    if (!friendlyLabel) {
-      friendlyLabel = relatedList.label || `Related ${relatedList.child_table}`;
-    }
-    
     const newBlock: LayoutBlock = {
       id: `temp-${Date.now()}-${Math.random()}`,
       object_id: selectedObject,
       block_type: 'related_list',
       related_list_id: relatedList.id,
-      label: friendlyLabel,
+      label: relatedList.label || `Related ${relatedList.child_table}`,
       section: section,
-      display_order: layoutBlocks.filter(b => b.section === section).length,
+      display_order: 0,
       width: 'full',
       is_visible: true,
       tab_type: 'related_list',
       display_columns: ['id', 'name']
     };
-    
+
     setLayoutBlocks(prev => [...prev, newBlock]);
-    
-    // Automatically open configuration modal for newly added related lists
-    // This provides immediate configuration opportunity for better UX
+
     setTimeout(() => {
       setSelectedRelatedList(relatedList);
       setSelectedLayoutBlockForConfig(newBlock);
       setShowRelatedListConfigModal(true);
-    }, 100); // Small delay to ensure state updates are processed
-  };
+    }, 100);
+  }, [selectedObject, layoutBlocks]);
 
-  const addButtonToLayout = (button: Button, section: string) => {
-    console.log('🔧 === ADD BUTTON TO LAYOUT CALLED ===');
-    console.log('🔧 Button:', button);
-    console.log('🔧 Section:', section);
-    console.log('🔧 Selected object:', selectedObject);
-    
-    // Validate inputs
-    if (!button || !button.id) {
-      console.log('❌ Button validation failed');
-      setMessage({ 
-        text: 'Invalid button data. Please try again.', 
-        type: 'error' 
-      });
-      return;
-    }
-    
-    if (!section || !selectedObject) {
-      console.log('❌ Section or object validation failed');
-      setMessage({ 
-        text: 'Invalid section or object selection.', 
-        type: 'error' 
-      });
-      return;
-    }
+  const addButtonToLayout = useCallback((button: Button, section: string) => {
+    if (!button?.id || !section || !selectedObject) return;
 
-    // Check if this button is already in the layout
     const isAlreadyInLayout = layoutBlocks.some(
-      block => block.block_type === 'button' && block.button_id === button.id
+      b => b.block_type === 'button' && b.button_id === button.id
     );
-    
     if (isAlreadyInLayout) {
       setMessage({ text: `Button "${button.label || button.name}" is already in the layout.`, type: 'info' });
       return;
@@ -587,21 +527,15 @@ export default function ObjectLayoutEditor({
       button_id: button.id,
       label: button.label || button.name,
       section: section,
-      display_order: layoutBlocks.filter(b => b.section === section).length,
+      display_order: 0,
       width: 'half',
       is_visible: true,
       tab_type: 'main',
       display_columns: []
     };
-    
-    console.log('🔧 New button block created:', newBlock);
-    setLayoutBlocks(prev => {
-      const newBlocks = [...prev, newBlock];
-      console.log('🔧 Updated layout blocks:', newBlocks);
-      return newBlocks;
-    });
-    console.log('✅ Button added successfully');
-  };
+
+    setLayoutBlocks(prev => [...prev, newBlock]);
+  }, [selectedObject, layoutBlocks]);
 
   // Handle adding related list to a specific section
   const handleAddRelatedListToSection = (section: string) => {
@@ -1049,9 +983,9 @@ export default function ObjectLayoutEditor({
         searchQuery={fieldPoolSearchQuery}
         onSearchChange={useCallback(setFieldPoolSearchQuery, [])}
         getFieldIcon={getFieldIcon}
-        onAddField={useCallback(addFieldToLayout, [])}
-        onAddRelatedList={useCallback(addRelatedListToLayout, [])}
-        onAddButton={useCallback(addButtonToLayout, [])}
+        onAddField={addFieldToLayout}
+        onAddRelatedList={addRelatedListToLayout}
+        onAddButton={addButtonToLayout}
         availableSections={sectionOrder}
         sectionTypes={sectionTypes}
       />

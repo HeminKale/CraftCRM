@@ -68,32 +68,9 @@ export default function DataTable<T>({
       }
       
       if (value === null || value === undefined) return false;
-      const matches = String(value).toLowerCase().includes(searchQuery.toLowerCase());
-      
-      // Debug logging for search
-      if (searchQuery && matches) {
-        console.log('🔍 Search match found:', {
-          key,
-          value,
-          searchQuery,
-          item: (item as DataItem<T>).fields ? 'has fields' : 'direct properties'
-        });
-      }
-      
-      return matches;
+      return String(value).toLowerCase().includes(searchQuery.toLowerCase());
     });
   });
-
-  // Debug logging for search state
-  if (searchQuery) {
-    console.log('🔍 DataTable Search Debug:', {
-      searchQuery,
-      totalItems: data.length,
-      filteredItems: filteredData.length,
-      searchKeys: searchKeys.length,
-      sampleItem: data[0] ? ((data[0] as DataItem<T>).fields ? 'has fields structure' : 'direct properties') : 'no data'
-    });
-  }
 
   // NEW: Selection logic
   const handleSelectAll = (checked: boolean) => {
@@ -122,16 +99,6 @@ export default function DataTable<T>({
   
   const isIndeterminate = enableSelection && selectedItems.length > 0 && !isAllSelected;
 
-  // DEBUG: Log DataTable selection state
-  console.log('🔍 DataTable Selection Debug:', {
-    enableSelection,
-    selectedItems: selectedItems.length,
-    filteredDataLength: filteredData.length,
-    isAllSelected,
-    isIndeterminate,
-    hasOnSelectionChange: !!onSelectionChange,
-    hasGetItemId: !!getItemId
-  });
 
   return (
     <div className={`bg-white rounded-lg shadow ${className}`}>

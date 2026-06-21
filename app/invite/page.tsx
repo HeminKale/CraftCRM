@@ -82,52 +82,36 @@ export default function InvitePage() {
 
   const handleAcceptInvitation = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!invitation) {
-      toast.error('No invitation found');
-      return;
-    }
 
-    if (formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters long');
-      return;
-    }
+    if (!invitation) { toast.error('No invitation found'); return; }
+    if (formData.password !== formData.confirmPassword) { toast.error('Passwords do not match'); return; }
+    if (formData.password.length < 6) { toast.error('Password must be at least 6 characters long'); return; }
 
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .rpc('accept_invitation', {
-          p_token: token,
-          p_password: formData.password,
-          p_first_name: formData.first_name.trim() || null,
-          p_last_name: formData.last_name.trim() || null
-        });
-      
-      if (error) {
-        console.error('Error accepting invitation:', error);
-        toast.error(error.message || 'Failed to accept invitation');
-        return;
-      }
-      
-      if (data?.[0]?.success) {
+
+      const res = await fetch('/api/auth/accept-invitation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token,
+          password: formData.password,
+          first_name: formData.first_name.trim() || null,
+          last_name:  formData.last_name.trim()  || null,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
         toast.success('Account created successfully! You can now sign in.');
         setStep('success');
-        
-        // Auto-redirect to login after 3 seconds
-        setTimeout(() => {
-          router.push('/');
-        }, 3000);
+        setTimeout(() => router.push('/'), 3000);
       } else {
-        toast.error(data?.[0]?.message || 'Failed to accept invitation');
+        toast.error(data.message || 'Failed to accept invitation');
       }
-    } catch (err) {
-      console.error('Error accepting invitation:', err);
-      toast.error('Failed to accept invitation');
+    } catch {
+      toast.error('An unexpected error occurred');
     } finally {
       setLoading(false);
     }

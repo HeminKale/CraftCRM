@@ -25,6 +25,7 @@ interface TabEntry {
 export default function Layout({ children, mode = 'app' }: LayoutProps) {
   const [visibleTabs, setVisibleTabs] = useState<TabEntry[]>([]);
   const [activeTab, setActiveTab] = useState<string>('');
+  const [tabsLoading, setTabsLoading] = useState(false);
   const { selectedApp, updateSelectedApp, loading: appLoading } = useCurrentApp();
   const { tenant } = useSupabase();
   const supabase = createClientComponentClient();
@@ -83,10 +84,14 @@ export default function Layout({ children, mode = 'app' }: LayoutProps) {
       }
 
       try {
-        // Use the bridge function to get app tabs
+        // Wait until tenant is loaded — don't fetch with fallback ID
+        if (!tenant?.id) return;
+
+        setTabsLoading(true);
+
         const { data: appTabs, error } = await supabase
           .rpc('get_tenant_app_tabs', {
-            p_tenant_id: tenant?.id || '00000000-0000-0000-0000-000000000000'
+            p_tenant_id: tenant.id
           });
 
         if (!error && appTabs) {
@@ -120,18 +125,21 @@ export default function Layout({ children, mode = 'app' }: LayoutProps) {
                 setActiveTab(tabDetails[0].id);
               }
             }
-          } else if (tabDetails.length > 0 && !activeTab) {
+          } else if (tabDetails.length > 0) {
+            // Always land on first tab — handles refresh and app switch
             setActiveTab(tabDetails[0].id);
           }
         }
       } catch (err) {
         console.error('Error fetching tabs:', err);
         setVisibleTabs([]);
+      } finally {
+        setTabsLoading(false);
       }
     };
 
     fetchTabs();
-  }, [selectedApp, supabase]);
+  }, [selectedApp, tenant?.id]);
 
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId);
@@ -153,9 +161,20 @@ export default function Layout({ children, mode = 'app' }: LayoutProps) {
         );
       }
       
-      // If app is selected but has no tabs, show no tabs message
+      // Still loading tabs — show spinner instead of "No tabs" flash
+      if (tabsLoading || (!tenant?.id)) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-gray-50">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading application...</p>
+            </div>
+          </div>
+        );
+      }
+
+      // Tabs loaded but none configured
       if (visibleTabs.length === 0) {
-        console.log('🔍 Layout: Rendering no tabs message');
         return (
           <div className="flex items-center justify-center min-h-[60vh]">
             <div className="text-center">
@@ -164,15 +183,9 @@ export default function Layout({ children, mode = 'app' }: LayoutProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 002 2z" />
                 </svg>
               </div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                {selectedApp.name}
-              </h2>
-              <p className="text-gray-500 mb-4">
-                No tabs are configured for this application.
-              </p>
-              <p className="text-sm text-gray-400">
-                Go to Settings → App Manager to configure tabs for this app.
-              </p>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">{selectedApp.name}</h2>
+              <p className="text-gray-500 mb-4">No tabs are configured for this application.</p>
+              <p className="text-sm text-gray-400">Go to Settings → App Manager to configure tabs for this app.</p>
             </div>
           </div>
         );

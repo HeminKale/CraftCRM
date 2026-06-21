@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { usePermissions } from '../providers/PermissionsProvider';
 
 interface App {
   id: string;
@@ -20,8 +21,7 @@ export default function AppLauncher({ onAppSelect, tenantId }: AppLauncherProps)
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(false);
   const supabase = createClientComponentClient();
-
-  console.log('🔍 AppLauncher rendered - tenantId:', tenantId);
+  const { can } = usePermissions();
 
   // Load active apps
   useEffect(() => {
@@ -31,7 +31,6 @@ export default function AppLauncher({ onAppSelect, tenantId }: AppLauncherProps)
   }, [showModal]);
 
   const fetchActiveApps = async () => {
-    console.log('🔍 Fetching active apps for tenant:', tenantId);
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -41,10 +40,6 @@ export default function AppLauncher({ onAppSelect, tenantId }: AppLauncherProps)
         .eq('is_active', true)
         .eq('tenant_id', tenantId)
         .order('name');
-      
-      console.log('🔍 Apps result:', data);
-      console.log('🔍 Apps error:', error);
-      
       if (error) throw error;
       setApps(data || []);
     } catch (err: any) {
@@ -55,7 +50,6 @@ export default function AppLauncher({ onAppSelect, tenantId }: AppLauncherProps)
   };
 
   const handleAppSelect = (app: App) => {
-    console.log('🔍 App selected:', app);
     // Store selected app in localStorage
     const selectedApp = { id: app.id, name: app.name };
     localStorage.setItem('selected_app', JSON.stringify(selectedApp));
@@ -68,16 +62,11 @@ export default function AppLauncher({ onAppSelect, tenantId }: AppLauncherProps)
     setShowModal(false);
   };
 
-  console.log('🔍 AppLauncher render - apps:', apps, 'loading:', loading);
-
   return (
     <div className="relative">
       {/* 9-dot App Launcher Icon */}
       <button
-        onClick={() => {
-          console.log('🔍 App launcher clicked');
-          setShowModal(true);
-        }}
+        onClick={() => setShowModal(true)}
         className="p-2 rounded-md hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
         title="App Launcher"
       >
@@ -126,7 +115,7 @@ export default function AppLauncher({ onAppSelect, tenantId }: AppLauncherProps)
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-3 max-h-64 overflow-y-auto">
-                {apps.map((app) => (
+                {apps.filter(app => can('read', 'app', app.id)).map((app) => (
                   <button
                     key={app.id}
                     onClick={() => handleAppSelect(app)}

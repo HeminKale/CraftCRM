@@ -80,6 +80,8 @@ export default function TabContent({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showNewRecordForm, setShowNewRecordForm] = useState(false);
+  const [showCustomNewModal, setShowCustomNewModal] = useState(false);
+  const [customNewButton, setCustomNewButton] = useState<any>(null);
  
   // NEW: State for new record modal and page layout
   const [pageLayout, setPageLayout] = useState<LayoutBlock[]>([]);
@@ -1499,6 +1501,13 @@ export default function TabContent({
                         console.log('🔘 Selected button clicked:', button);
                         console.log('🔍 Selected record IDs:', selectedRecordIds);
                         
+                        // Check if this is a "new record" button — open custom new modal, not bulk
+                        if (button.custom_component_path && button.action_type === 'new_record') {
+                          setCustomNewButton(button);
+                          setShowCustomNewModal(true);
+                          return;
+                        }
+
                         // Check if this is a custom component button
                         if (button.custom_component_path) {
                           // For bulk operations, directly fetch the selected records and open the component
@@ -1647,22 +1656,6 @@ export default function TabContent({
                 The system is ready to display records when they become available.
               </p>
              
-              {/* Table Structure Preview */}
-              <div className="bg-gray-50 rounded-lg p-4 text-left">
-                <h4 className="text-sm font-medium text-gray-700 mb-3">
-                  {selectedRecordList
-                    ? `${selectedRecordList.name} View Fields:`
-                    : 'Table Structure Preview:'
-                  }
-                </h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-                  {(selectedRecordList?.selected_fields || allFieldNames).map(fieldName => (
-                    <div key={fieldName} className="bg-white px-2 py-1 rounded border text-gray-600">
-                      {getFieldLabel(fieldName)}
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
         ) : (
@@ -1968,10 +1961,11 @@ export default function TabContent({
     console.log('✅ Custom component path found, rendering CustomTabRenderer');
     // Dynamic component loading with error boundary
     return (
-      <CustomTabRenderer 
+      <CustomTabRenderer
         componentPath={customComponentPath}
         tabId={tabId}
         tabLabel={tabLabel}
+        tenantId={tenant?.id}
         selectedRecordIds={selectedRecordIds}
       />
     );
@@ -2018,7 +2012,7 @@ export default function TabContent({
 
             {/* Render the custom component directly in the modal */}
             <div className="max-h-[70vh] overflow-y-auto">
-              <CustomTabRenderer 
+              <CustomTabRenderer
                 componentPath={button.custom_component_path}
                 tabId="bulk-operation"
                 tabLabel={button.label || button.name}
@@ -2027,6 +2021,15 @@ export default function TabContent({
                 objectId={objectId}
                 recordData={selectedRecords}
                 tenantId={tenantId}
+                onSuccess={() => {
+                  setShowBulkOperationModal(false);
+                  setBulkOperationData(null);
+                  fetchObjectRecords();
+                }}
+                onCancel={() => {
+                  setShowBulkOperationModal(false);
+                  setBulkOperationData(null);
+                }}
               />
             </div>
           </div>
@@ -2116,7 +2119,31 @@ export default function TabContent({
       return (
         <div>
           {renderObjectTab()}
-         
+
+          {/* Custom New Record Modal (e.g. New Client) */}
+          {showCustomNewModal && customNewButton && (
+            <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+              <div className="relative top-16 mx-auto p-6 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white max-h-[90vh] overflow-y-auto">
+                <CustomTabRenderer
+                  componentPath={customNewButton.custom_component_path}
+                  tabId={`new_${customNewButton.id}`}
+                  tabLabel={customNewButton.label || customNewButton.name}
+                  objectId={objectId}
+                  tenantId={tenant?.id}
+                  onSuccess={() => {
+                    setShowCustomNewModal(false);
+                    setCustomNewButton(null);
+                    fetchObjectRecords();
+                  }}
+                  onCancel={() => {
+                    setShowCustomNewModal(false);
+                    setCustomNewButton(null);
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* New Record Modal - Dynamic Form Based on Page Layout */}
           {showNewRecordForm && (
             <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
