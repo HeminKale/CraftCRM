@@ -31,15 +31,14 @@ export default function AuthPage() {
   const [showPasswordResetConfirmation, setShowPasswordResetConfirmation] = useState(false)
 
   useEffect(() => {
+    // Only redirect to dashboard if we have a confirmed, stable session.
+    // Delay slightly so a signOut that just cleared the session doesn't
+    // briefly see the old user before the SIGNED_OUT event fires.
     if (!loading && user) {
-      router.push('/dashboard')
+      const t = setTimeout(() => router.push('/dashboard'), 100);
+      return () => clearTimeout(t);
     }
   }, [user, loading, router])
-
-  // Debug log for state changes
-  useEffect(() => {
-    console.log('🔐 AuthPage state changed:', { isSignUp, isForgotPassword, showEmailConfirmation, showPasswordResetConfirmation })
-  }, [isSignUp, isForgotPassword, showEmailConfirmation, showPasswordResetConfirmation])
 
   // Load existing organizations
   useEffect(() => {
@@ -51,7 +50,6 @@ export default function AuthPage() {
         if (error) {
           console.error('❌ Error loading organizations:', error)
         } else {
-          console.log('✅ Organizations loaded:', data)
           setOrganizations(data || [])
         }
       } catch (error) {
@@ -115,7 +113,6 @@ export default function AuthPage() {
       let tenantId: string
 
       if (isNewOrganization) {
-        console.log('🔍 AuthPage: Creating new tenant:', companyName)
         const { data: tenant, error: tenantError } = await supabase
           .rpc('create_tenant', {
             tenant_name: companyName
@@ -127,13 +124,10 @@ export default function AuthPage() {
         }
 
         tenantId = tenant[0].id
-        console.log('✅ New tenant created:', tenantId)
       } else {
         tenantId = selectedOrganization
-        console.log('🔍 AuthPage: Using existing tenant:', tenantId)
       }
 
-      console.log('🔍 AuthPage: Creating user profile...')
       const { error: userError } = await supabase
         .rpc('create_user', {
           p_user_id: userId,
@@ -149,7 +143,6 @@ export default function AuthPage() {
         throw new Error(`Failed to create user profile: ${userError.message}`)
       }
 
-      console.log('✅ User profile created successfully')
       return true
     } catch (error) {
       console.error('❌ Error in createTenantAndUser:', error)
@@ -159,20 +152,15 @@ export default function AuthPage() {
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log('🔐 handleForgotPassword called with email:', email)
     setAuthLoading(true)
     setErrors({})
 
-    console.log('🔐 Validating form...')
     if (!validateForm()) {
-      console.log('❌ Form validation failed')
       setAuthLoading(false)
       return
     }
-    console.log('✅ Form validation passed')
 
     try {
-      console.log('🔐 Starting password reset for:', email)
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/callback?type=recovery`
       })
@@ -182,7 +170,6 @@ export default function AuthPage() {
         setErrors({ email: error.message })
         toast.error(error.message)
       } else {
-        console.log('✅ Password reset email sent successfully')
         setShowPasswordResetConfirmation(true)
         toast.success('Password reset email sent! Please check your email.')
       }
@@ -190,28 +177,22 @@ export default function AuthPage() {
       console.error('❌ Unexpected error:', error)
       toast.error('An unexpected error occurred')
     } finally {
-      console.log('🔐 Setting authLoading to false')
       setAuthLoading(false)
     }
   }
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log('🔐 handleEmailAuth called')
     setAuthLoading(true)
     setErrors({})
 
-    console.log('🔐 Validating form...')
     if (!validateForm()) {
-      console.log('❌ Form validation failed')
       setAuthLoading(false)
       return
     }
-    console.log('✅ Form validation passed')
 
     try {
       if (isSignUp) {
-        console.log('🔐 Starting Sign Up process for:', email)
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -225,35 +206,29 @@ export default function AuthPage() {
           setErrors({ email: error.message })
           toast.error(error.message)
         } else if (data.user) {
-          console.log('✅ User created, creating tenant and profile...')
           const success = await createTenantAndUser(data.user.id, email)
           if (success) {
-            console.log('✅ Tenant and user created successfully')
             setShowEmailConfirmation(true)
             toast.success('Account created! Please check your email to confirm your account.')
           } else {
-            console.log('✅ Auth user created, email sent for confirmation')
+            // Profile setup failed but auth user exists — still show confirmation
+            // so the user can confirm email. Admin can fix system.users manually if needed.
             setShowEmailConfirmation(true)
             toast.success('Account created! Please check your email to confirm your account.')
           }
         }
       } else {
-        console.log('🔐 Starting Sign In process for:', email)
-        console.log('🔐 Calling supabase.auth.signInWithPassword...')
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password
         })
         
-        console.log('🔐 Sign in result:', { data: !!data, error: !!error, user: data?.user?.id })
         
         if (error) {
           console.error('❌ Sign in error:', error)
           setErrors({ email: error.message })
           toast.error(error.message)
         } else {
-          console.log('✅ Sign in successful, redirecting to dashboard...')
-          console.log('🔐 User data:', data.user)
           router.push('/dashboard')
         }
       }
@@ -261,7 +236,6 @@ export default function AuthPage() {
       console.error('❌ Unexpected error:', error)
       toast.error('An unexpected error occurred')
     } finally {
-      console.log('🔐 Setting authLoading to false')
       setAuthLoading(false)
     }
   }
@@ -599,7 +573,6 @@ export default function AuthPage() {
               <button
                 type="button"
                 onClick={() => {
-                  console.log('🔐 Forgot password clicked')
                   setIsForgotPassword(true)
                   setShowEmailConfirmation(false)
                   setShowPasswordResetConfirmation(false)

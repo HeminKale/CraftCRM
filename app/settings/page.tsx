@@ -15,37 +15,23 @@ export default function SettingsPage() {
   const [pageLoading, setPageLoading] = useState(true);
   const router = useRouter();
 
-  console.log('🔍 Settings Page: Component rendered');
-  console.log('🔍 Settings Page: user:', user);
-  console.log('🔍 Settings Page: loading:', loading);
-  console.log('🔍 Settings Page: activeTab:', activeTab);
-
   useEffect(() => {
-    console.log('🔍 Settings Page: useEffect triggered');
     if (!loading) {
       if (!user) {
-        console.log('🔍 Settings Page: No user, redirecting to /');
-        // Redirect to login if not authenticated
         window.location.href = '/';
         return;
       }
-      console.log('🔍 Settings Page: User authenticated, setting pageLoading to false');
       setPageLoading(false);
     }
   }, [user, loading]);
 
   const handleSignOut = async () => {
-    try {
-      console.log('🔍 Settings Page: Sign out clicked');
-      await signOut();
-      router.push('/');
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
+    await fetch('/api/auth/signout', { method: 'POST' });
+    await signOut();
+    router.push('/');
   };
 
   if (loading || pageLoading) {
-    console.log('🔍 Settings Page: Showing loading state');
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -53,7 +39,6 @@ export default function SettingsPage() {
     );
   }
 
-  console.log('🔍 Settings Page: Rendering Layout with mode="settings"');
   return (
     <Layout mode="settings">
       <div className="p-6">

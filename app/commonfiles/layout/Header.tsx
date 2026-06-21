@@ -10,7 +10,7 @@ export function Header() {
   const [showUserMenu, setShowUserMenu] = useState(false)
 
   const handleSignOut = async () => {
-    await signOut()
+    await signOut();
   }
 
   return (

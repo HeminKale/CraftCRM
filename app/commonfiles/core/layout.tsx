@@ -2,6 +2,7 @@
 
 import './globals.css'
 import { SupabaseProvider } from './providers/SupabaseProvider'
+import { PermissionsProvider } from './providers/PermissionsProvider'
 import { Toaster } from 'react-hot-toast'
 
 export default function CoreLayout({
@@ -11,8 +12,10 @@ export default function CoreLayout({
 }) {
   return (
     <SupabaseProvider>
-      {children}
-      <Toaster position="top-right" />
+      <PermissionsProvider>
+        {children}
+        <Toaster position="top-right" />
+      </PermissionsProvider>
     </SupabaseProvider>
   )
 } 

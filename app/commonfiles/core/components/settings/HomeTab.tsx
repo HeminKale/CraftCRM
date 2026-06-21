@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import DataTable from '../DataTable';
 import { useSupabase } from '../../providers/SupabaseProvider';
 import UserManagement from './UserManagement';
+import PermissionSets from './PermissionSets';
 
 interface HomeTabProps {
   user: any;
@@ -48,31 +49,6 @@ export default function HomeTab({ user, userProfile, tenant }: HomeTabProps) {
   }>>([]);
   const [showCreateTabModal, setShowCreateTabModal] = useState(false);
   
-  // Debug: Monitor tenant changes
-  useEffect(() => {
-    console.log('🔍 === Tenant State Changed ===');
-    console.log('New tenant:', tenant);
-    console.log('Tenant ID:', tenant?.id);
-    console.log('Tenant ID type:', typeof tenant?.id);
-    console.log('Tenant ID truthy:', !!tenant?.id);
-  }, [tenant]);
-
-  // Debug: Monitor showCreateTabModal state changes
-  useEffect(() => {
-    console.log('🔍 === showCreateTabModal State Changed ===');
-    console.log('New value:', showCreateTabModal);
-    console.log('Component should re-render now');
-  }, [showCreateTabModal]);
-  
-  // Debug: Track component renders
-  const renderCount = useRef(0);
-  renderCount.current += 1;
-  
-  console.log('🔍 === HomeTab Component Rendered ===');
-  console.log('Render count:', renderCount.current);
-  console.log('Current showCreateTabModal:', showCreateTabModal);
-  console.log('Current tenant ID:', tenant?.id);
-  console.log('Tenant loaded:', !!tenant?.id);
   const [newTab, setNewTab] = useState({ 
     name: '', 
     label: '',
@@ -158,75 +134,25 @@ export default function HomeTab({ user, userProfile, tenant }: HomeTabProps) {
   }, [openAppDropdown]);
 
   useEffect(() => {
-    console.log('🔍 === useEffect for loadData triggered ===');
-    console.log('🔍 Tenant available:', !!tenant);
-    console.log('🔍 Tenant ID:', tenant?.id);
-    console.log('🔍 Tenant ID type:', typeof tenant?.id);
-    console.log('🔍 Will call loadData:', !!tenant?.id);
-    
     if (tenant?.id) {
-      console.log('✅ Calling loadData with tenant ID:', tenant?.id);
-    loadData();
-    } else {
-      console.log('❌ Skipping loadData - no tenant ID');
+      loadData();
     }
   }, [tenant?.id]);
 
-  // Monitor apps state changes
-
-
-
-useEffect(() => {
- 
-}, [apps]);
-  // Debug modal data when it opens
-  useEffect(() => {
-   
-    
-    if (showAppTabConfigModal && selectedAppForTabConfig) {
-      
-    }
-  }, [showAppTabConfigModal, selectedAppForTabConfig, tabs, appTabConfigs]);
 
   const loadData = async () => {
-    console.log('🔄 === loadData Function Called ===');
-    console.log('🔄 Tenant available:', !!tenant);
-    console.log('🔄 Tenant ID:', tenant?.id);
-    console.log('🔄 Tenant ID type:', typeof tenant?.id);
-    console.log('🔄 Tenant ID truthy:', !!tenant?.id);
-    
-    // Guard clause: don't proceed without tenant ID
-    if (!tenant?.id) {
-      console.log('❌ loadData: No tenant ID available, skipping data load');
-      return;
-    }
-
+    if (!tenant?.id) return;
     try {
-      console.log('🔄 Starting data load with tenant ID:', tenant?.id);
-      
-      const results = await Promise.all([
-        fetchProfiles().catch(err => ({ error: 'fetchProfiles', details: err })),
-        fetchTabs().catch(err => ({ error: 'fetchTabs', details: err })),
-        fetchApps().catch(err => ({ error: 'fetchApps', details: err })),
-        fetchUsers().catch(err => ({ error: 'fetchUsers', details: err })),
-        fetchAppTabConfigs().catch(err => ({ error: 'fetchAppTabConfigs', details: err })),
-
-        (() => {
-          console.log('🔍 === Calling fetchObjects from loadData ===');
-          console.log('🔍 Tenant ID when calling fetchObjects:', tenant?.id);
-          return fetchObjects().catch(err => ({ error: 'fetchObjects', details: err }));
-        })()
+      await Promise.all([
+        fetchProfiles().catch(() => null),
+        fetchTabs().catch(() => null),
+        fetchApps().catch(() => null),
+        fetchUsers().catch(() => null),
+        fetchAppTabConfigs().catch(() => null),
+        fetchObjects().catch(() => null),
       ]);
-      
-      // Check for any errors
-      const errors = results.filter(r => r && r.error);
-      if (errors.length > 0) {
-        console.error('❌ Data loading errors:', errors);
-      } else {
-        console.log('✅ All data loaded successfully');
-      }
     } catch (error) {
-      console.error('❌ Error in loadData:', error);
+      console.error('Error in loadData:', error);
     }
   };
 
@@ -329,64 +255,29 @@ useEffect(() => {
 
   const fetchTabs = async () => {
     try {
-      console.log('🔍 === Fetching Tabs for Settings ===');
-      console.log('Tenant ID:', tenant?.id);
-      
-      // Use the new comprehensive bridge function for Tab Settings
       const { data, error } = await supabase
         .rpc('get_tenant_tabs_for_settings', { p_tenant_id: tenant?.id });
-
-      if (error) {
-        console.error('❌ Error fetching tabs for settings:', error);
-        throw error;
-      }
-      
-      console.log('✅ Tabs fetched successfully for settings:', data);
-      console.log('Number of tabs:', data?.length || 0);
-      
-      // Transform the data to match our interface - now much simpler!
+      if (error) throw error;
       const transformedTabs = (data || []).map(tab => ({
         ...tab,
-        // The new RPC function already provides these columns:
         name: tab.label || 'Unnamed Tab',
         description: tab.description || 'No description',
         api_name: tab.api_name || '-'
       }));
-      
-      console.log('✅ Transformed tabs for settings:', transformedTabs);
       setTabs(transformedTabs);
     } catch (err: any) {
-      console.error('❌ Exception in fetchTabs:', err);
+      console.error('Error fetching tabs:', err);
     }
   };
 
   const fetchApps = async () => {
     try {
-      console.log('📱 === FETCHING APPS FROM RPC ===');
-      console.log('Calling RPC function: get_apps');
-      console.log('Parameter tenant_id:', tenant?.id);
-      
-      // Use bridge function instead of direct table access
       const { data, error } = await supabase
         .rpc('get_apps', { p_tenant_id: tenant?.id });
-
-      if (error) {
-        console.error('❌ Error calling get_apps RPC:', error);
-        throw error;
-      }
-
-      console.log('✅ Apps fetched from RPC get_apps:');
-      console.log('Total apps:', data?.length || 0);
-      console.log('Apps data:', data);
-      if (data && data.length > 0) {
-        console.log('Sample app structure:', data[0]);
-        console.log('App columns:', Object.keys(data[0] || {}));
-      }
-
+      if (error) throw error;
       setApps(data || []);
-      console.log('✅ Apps state updated:', data || []);
     } catch (err: any) {
-      console.error('❌ Error fetching apps:', err);
+      console.error('Error fetching apps:', err);
     }
   };
 
@@ -655,63 +546,21 @@ useEffect(() => {
 
   // Tab management handlers
   const fetchObjects = async () => {
-    console.log('🔍 === fetchObjects Function Called ===');
-    console.log('Current tenant?.id:', tenant?.id);
-    console.log('Tenant type:', typeof tenant?.id);
-    
     try {
-      console.log('🔍 Calling RPC function: get_tenant_objects');
-      console.log('🔍 Parameter: tenant_id =', tenant?.id);
-      
-      // Use the RPC function instead of direct table access
       const { data, error } = await supabase.rpc('get_tenant_objects', {
         p_tenant_id: tenant?.id
       });
-      
-      console.log('🔍 RPC response:');
-      console.log('Data:', data);
-      console.log('Error:', error);
-      console.log('Data length:', data?.length || 0);
-      console.log('Data type:', typeof data);
-      console.log('Is array:', Array.isArray(data));
-      
-      if (error) {
-        console.error('❌ Error calling get_tenant_objects:', error);
-        console.error('❌ Error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
-        throw error;
-      }
-      
-      console.log('✅ Setting objects state with:', data || []);
+      if (error) throw error;
       setObjects(data || []);
-      
     } catch (err: any) {
-      console.error('❌ Exception in fetchObjects:', err);
-      console.error('❌ Exception type:', typeof err);
-      console.error('❌ Exception message:', err?.message);
+      console.error('Error fetching objects:', err);
     }
   };
 
   const handleCreateTab = async () => {
     if (!newTab.name.trim()) return;
-    
+
     try {
-      console.log('🔍 === Creating Tab ===');
-      console.log('Tab data to insert:', {
-        label: newTab.name,  // Use name as label
-        tab_type: newTab.tab_type,
-        object_id: newTab.object_id || null,
-        custom_component_path: newTab.custom_component_path || null,
-        custom_route: newTab.custom_route || null,
-        tenant_id: tenant?.id,
-        is_active: true,
-        order_index: 0
-      });
-      
       const { data, error } = await supabase
         .schema('tenant')
         .from('tabs')
@@ -727,26 +576,15 @@ useEffect(() => {
         }])
         .select();
 
-      if (error) {
-        console.error('❌ Error creating tab:', error);
-        throw error;
-      }
-      
-      console.log('✅ Tab created successfully:', data[0]);
+      if (error) throw error;
       setTabs([...tabs, data[0]]);
       setShowCreateTabModal(false);
-      setNewTab({ 
-        name: '', 
-        label: '',
-        description: '', 
-        is_visible: true,
-        tab_type: 'object',
-        object_id: '',
-        custom_component_path: '',
-        custom_route: ''
+      setNewTab({
+        name: '', label: '', description: '', is_visible: true,
+        tab_type: 'object', object_id: '', custom_component_path: '', custom_route: ''
       });
     } catch (err: any) {
-      console.error('❌ Exception creating tab:', err);
+      console.error('Error creating tab:', err);
     }
   };
 
@@ -836,167 +674,56 @@ useEffect(() => {
   // Enhanced App Tab Management - Fetch from tenant.tabs and load existing states
   const fetchAppTabConfigs = async () => {
     try {
-      console.log('🔍 === fetchAppTabConfigs Debug ===');
-      console.log('Fetching all available tabs and existing app-tab relationships...');
-      console.log('Tenant ID:', tenant?.id);
-      console.log('Current apps state:', apps);
-      console.log('Current appTabConfigs state:', appTabConfigs);
-      
-      // Fetch all available tabs using bridge function
-      console.log('📋 === FETCHING FROM tenant.tabs (via bridge function) ===');
       const { data: allTabs, error: tabsError } = await supabase
         .rpc('get_tenant_tabs', { p_tenant_id: tenant?.id });
+      if (tabsError) return;
 
-      if (tabsError) {
-        console.error('❌ Error fetching tabs via bridge function:', tabsError);
-        return;
-      }
-
-      console.log('✅ Tabs fetched from tenant.tabs:');
-      console.log('Total tabs:', allTabs?.length || 0);
-      console.log('Tabs data:', allTabs);
-      if (allTabs && allTabs.length > 0) {
-        console.log('Sample tab structure:', allTabs[0]);
-        console.log('Tab columns:', Object.keys(allTabs[0] || {}));
-      }
-
-      // Fetch existing app-tab relationships using bridge function
-      console.log('📋 === FETCHING FROM tenant.app_tabs (via bridge function) ===');
-      console.log('Calling RPC function: get_tenant_app_tabs');
-      console.log('Parameter tenant_id:', tenant?.id);
-      
       const { data: existingAppTabs, error: appTabsError } = await supabase
         .rpc('get_tenant_app_tabs', { p_tenant_id: tenant?.id });
+      if (appTabsError) return;
 
-      console.log('Raw app-tabs query result via bridge function:', { data: existingAppTabs, error: appTabsError });
-      
-      if (appTabsError) {
-        console.error('❌ Error fetching app-tabs:', appTabsError);
-        console.error('Error details:', {
-          message: appTabsError.message,
-          details: appTabsError.details,
-          hint: appTabsError.hint,
-          code: appTabsError.code
-        });
-        return;
-      }
-
-      console.log('✅ App-tabs relationships fetched from tenant.app_tabs:');
-      console.log('Total relationships:', existingAppTabs?.length || 0);
-      console.log('App-tabs data:', existingAppTabs);
-      if (existingAppTabs && existingAppTabs.length > 0) {
-        console.log('Sample relationship structure:', existingAppTabs[0]);
-        console.log('Relationship columns:', Object.keys(existingAppTabs[0] || {}));
-      }
-
-      // Process the tabs data with existing states
-      console.log('🔄 === PROCESSING DATA ===');
-      console.log('Processing for apps:', apps);
-      
       const processedConfigs: { [key: string]: any[] } = {};
       const processedOrder: { [key: string]: any[] } = {};
 
-      // For each app, create tab configurations with existing states
-      apps.forEach((app, appIndex) => {
-        console.log(`📱 Processing app ${appIndex + 1}:`, app);
-        
-        const appTabs = allTabs.map((tab, tabIndex) => {
-          // Find existing relationship for this app-tab combination
-          const existingRel = existingAppTabs?.find(at => 
+      apps.forEach((app) => {
+        const appTabs = allTabs.map((tab) => {
+          const existingRel = existingAppTabs?.find(at =>
             at.app_id === app.id && at.tab_id === tab.id
           );
-
-          const processedTab = {
-            id: existingRel?.id || tab.id, // Use existing ID if available
+          return {
+            id: existingRel?.id || tab.id,
             app_id: app.id,
             tab_id: tab.id,
             tab_order: existingRel?.tab_order || 1,
-            is_visible: existingRel?.is_visible ?? false, // Use existing state or default to false
+            is_visible: existingRel?.is_visible ?? false,
             tenant_id: tenant?.id,
             created_at: existingRel?.created_at || new Date().toISOString(),
             updated_at: existingRel?.updated_at || new Date().toISOString(),
             app_name: app.name,
             app_description: app.description,
             tab_label: tab.label,
-            tab_description: tab.label // Use label as description
+            tab_description: tab.label,
           };
-
-          console.log(`  📋 Tab ${tabIndex + 1}:`, {
-            tabId: tab.id,
-            tabLabel: tab.label,
-            existingRelFound: !!existingRel,
-            existingRelId: existingRel?.id,
-            existingIsVisible: existingRel?.is_visible,
-            finalIsVisible: processedTab.is_visible,
-            finalTabOrder: processedTab.tab_order
-          });
-
-          return processedTab;
         });
-
         processedConfigs[app.id] = appTabs;
         processedOrder[app.id] = appTabs;
-        
-        console.log(`✅ App ${app.name} processed:`, {
-          appId: app.id,
-          totalTabs: appTabs.length,
-          visibleTabs: appTabs.filter(t => t.is_visible).length,
-          hiddenTabs: appTabs.filter(t => !t.is_visible).length
-        });
-      });
-
-      console.log('📊 === FINAL PROCESSED DATA ===');
-      console.log('Processed configs:', processedConfigs);
-      console.log('Processed order:', processedOrder);
-      
-      // Log detailed breakdown for each app
-      Object.keys(processedConfigs).forEach(appId => {
-        const appConfig = processedConfigs[appId];
-        const app = apps.find(a => a.id === appId);
-        console.log(`📱 App "${app?.name}" (${appId}) configuration:`, {
-          totalTabs: appConfig.length,
-          visibleTabs: appConfig.filter(t => t.is_visible).map(t => t.tab_label),
-          hiddenTabs: appConfig.filter(t => !t.is_visible).map(t => t.tab_label),
-          tabOrder: appConfig.map(t => ({ tab: t.tab_label, order: t.tab_order }))
-        });
       });
 
       setAppTabConfigs(processedConfigs);
       setAppTabOrder(processedOrder);
-      
-      console.log('✅ State updated - appTabConfigs:', processedConfigs);
-      console.log('✅ State updated - appTabOrder:', processedOrder);
-      
     } catch (err: any) {
-      console.error('❌ Exception in fetchAppTabConfigs:', err);
+      console.error('Error fetching app tab configs:', err);
     }
   };
 
   const handleAppTabConfig = async (app: any) => {
-    console.log('🎯 === MODAL OPENING ===');
-    console.log('App selected for tab config:', app);
-    console.log('Current appTabConfigs state before refresh:', appTabConfigs);
-    
     setSelectedAppForTabConfig(app);
     setShowAppTabConfigModal(true);
-    
-    console.log('Modal state set to true, now refreshing data...');
-    
-    // Always refresh data when modal opens to ensure fresh state
-      await fetchAppTabConfigs();
-    
-    console.log('✅ Data refresh completed for modal');
+    await fetchAppTabConfigs();
   };
 
   const handleTabVisibilityToggle = async (appId: string, tabId: string, isVisible: boolean) => {
     try {
-      console.log('🔍 === Checkbox Click Debug ===');
-      console.log('appId:', appId);
-      console.log('tabId:', tabId);
-      console.log('isVisible:', isVisible);
-      console.log('tenant?.id:', tenant?.id);
-      
-      // Update local state immediately for better UX
       setAppTabConfigs(prev => ({
         ...prev,
         [appId]: prev[appId]?.map(tab => 
@@ -1006,7 +733,6 @@ useEffect(() => {
         ) || []
       }));
       
-      // Use bridge function to persist changes
       const { data, error } = await supabase
         .rpc('update_tab_visibility', {
           p_app_id: appId,
@@ -1015,19 +741,10 @@ useEffect(() => {
           p_tenant_id: tenant?.id
         });
 
-      console.log('RPC Response:', { data, error });
-
       if (error) throw error;
-      
-      // Check if the operation was successful
-      if (data && data.success) {
-        console.log('✅ Tab visibility updated successfully');
-      } else {
-        throw new Error(data?.message || 'Failed to update tab visibility');
-      }
+      if (!data?.success) throw new Error(data?.message || 'Failed to update tab visibility');
     } catch (err: any) {
-      console.error('❌ Error updating tab visibility:', err);
-      // Revert local state on error
+      console.error('Error updating tab visibility:', err);
       await fetchAppTabConfigs();
     }
   };
@@ -1053,8 +770,6 @@ useEffect(() => {
       
       // Check if the operation was successful
       if (data && data.success) {
-        console.log('✅ Tab order updated successfully');
-        // Update local state
         await fetchAppTabConfigs();
       } else {
         throw new Error(data?.message || 'Failed to update tab order');
@@ -1066,79 +781,34 @@ useEffect(() => {
 
   const handleBulkTabOperation = async (appId: string, operation: 'show_all' | 'hide_all' | 'reset_order' | 'save_custom', updates?: any[]) => {
     try {
-      console.log('🔄 === BULK OPERATION START ===');
-      console.log('Operation:', operation);
-      console.log('App ID:', appId);
-      console.log('Updates provided:', !!updates);
-      
       let upsertUpdates: any[] = [];
-      
+
       if (operation === 'show_all') {
-        const isVisible = true;
         upsertUpdates = (appTabConfigs[appId] || []).map(appTab => ({
-          app_id: appId,
-          tab_id: appTab.tab_id,
-          is_visible: isVisible,
-          tenant_id: tenant?.id
+          app_id: appId, tab_id: appTab.tab_id, is_visible: true, tenant_id: tenant?.id
         }));
-        console.log('📋 Show All: Created', upsertUpdates.length, 'updates');
       } else if (operation === 'hide_all') {
-        const isVisible = false;
         upsertUpdates = (appTabConfigs[appId] || []).map(appTab => ({
-          app_id: appId,
-          tab_id: appTab.tab_id,
-          is_visible: isVisible,
-          tenant_id: tenant?.id
+          app_id: appId, tab_id: appTab.tab_id, is_visible: false, tenant_id: tenant?.id
         }));
-        console.log('📋 Hide All: Created', upsertUpdates.length, 'updates');
       } else if (operation === 'reset_order') {
         upsertUpdates = (appTabConfigs[appId] || []).map((appTab, index) => ({
-          app_id: appId,
-          tab_id: appTab.tab_id,
-          tab_order: index + 1,
-          tenant_id: tenant?.id
+          app_id: appId, tab_id: appTab.tab_id, tab_order: index + 1, tenant_id: tenant?.id
         }));
-        console.log('📋 Reset Order: Created', upsertUpdates.length, 'updates');
       } else if (operation === 'save_custom') {
         upsertUpdates = updates || [];
-        console.log('📋 Save Custom: Using', upsertUpdates.length, 'provided updates');
       }
 
-      console.log('📊 Final upsert data:', upsertUpdates);
-      console.log('🚀 Calling database upsert...');
-      console.log('RPC function: bulk_update_tab_visibility');
-      console.log('Parameters:', {
-        p_updates: upsertUpdates,
-        p_tenant_id: tenant?.id
-      });
-
-      // Use RPC function instead of direct table access to bypass RLS
-      const { data, error } = await supabase
+      const { error } = await supabase
         .rpc('bulk_update_tab_visibility', {
           p_updates: upsertUpdates,
           p_tenant_id: tenant?.id
         });
 
-      if (error) {
-        console.error('❌ RPC call error:', error);
-        console.error('Error details:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
-        throw error;
-      }
-
-      console.log('✅ RPC call successful!');
-      console.log('📊 RPC Response:', data);
-      console.log('📊 Rows processed:', data?.total_processed || 0);
-      console.log('📊 Success count:', data?.success_count || 0);
-      console.log('📊 Error count:', data?.error_count || 0);
-      
+      if (error) throw error;
       await fetchAppTabConfigs();
     } catch (err: any) {
-      console.error('❌ Error in bulk operation:', err);
+      console.error('Error in bulk tab operation:', err);
       throw err;
     }
   };
@@ -1286,10 +956,7 @@ useEffect(() => {
 
               {/* Permission Sets Section */}
               {selectedHomeSection === 'permission_sets' && (
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Permission Sets</h2>
-                  <p className="text-gray-600">Permission set management functionality will be implemented here.</p>
-                </div>
+                <PermissionSets tenant={tenant} />
               )}
 
               {/* Tab Settings Section */}
@@ -1299,13 +966,7 @@ useEffect(() => {
       <h2 className="text-xl font-semibold text-gray-900">Tab Settings</h2>
       <div className="flex space-x-3">
         <button
-          onClick={() => {
-            console.log('🔍 === Create Tab Button Clicked ===');
-            console.log('Current showCreateTabModal state:', showCreateTabModal);
-            setShowCreateTabModal(true);
-            console.log('showCreateTabModal set to true');
-            console.log('Modal should now be visible');
-          }}
+          onClick={() => setShowCreateTabModal(true)}
           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
         >
           Create Tab
@@ -1432,25 +1093,8 @@ useEffect(() => {
       )}
     />
 
-    {/* Create/Edit Tab Modal - MOVED INSIDE Tab Settings Section */}
-    {(() => {
-      console.log('🔍 === Modal Render Check (Inside Tab Settings) ===');
-      console.log('showCreateTabModal value:', showCreateTabModal);
-      console.log('showCreateTabModal type:', typeof showCreateTabModal);
-      console.log('showCreateTabModal === true:', showCreateTabModal === true);
-      console.log('showCreateTabModal == true:', showCreateTabModal == true);
-      console.log('Boolean(showCreateTabModal):', Boolean(showCreateTabModal));
-      return null;
-    })()}
     {showCreateTabModal && (
       <>
-        {(() => {
-          console.log('🎯 === Create Tab Modal Rendering (Inside Tab Settings) ===');
-          console.log('showCreateTabModal is true, rendering modal');
-          console.log('Modal content should be visible now');
-          console.log('Modal JSX is executing!');
-          return null;
-        })()}
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-4/5 max-w-2xl max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
@@ -1517,13 +1161,6 @@ useEffect(() => {
               {newTab.tab_type === 'object' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Select Object</label>
-                  {(() => {
-                    console.log('🔍 === Objects State in Modal ===');
-                    console.log('objects array:', objects);
-                    console.log('objects length:', objects.length);
-                    console.log('objects type:', typeof objects);
-                    return null;
-                  })()}
                   <select
                     value={newTab.object_id}
                     onChange={(e) => setNewTab({ ...newTab, object_id: e.target.value })}
@@ -1957,23 +1594,6 @@ useEffect(() => {
                           </button>
                         </div>
 
-                        {/* Tabs Configuration Table */}
-                        {(() => {
-                          console.log('🎯 === MODAL RENDERING TABLE ===');
-                          console.log('selectedAppForTabConfig:', selectedAppForTabConfig);
-                          console.log('appTabConfigs for this app:', appTabConfigs[selectedAppForTabConfig.id]);
-                          console.log('Total tabs to render:', appTabConfigs[selectedAppForTabConfig.id]?.length || 0);
-                          
-                          if (appTabConfigs[selectedAppForTabConfig.id]) {
-                            console.log('Tab visibility breakdown:');
-                            appTabConfigs[selectedAppForTabConfig.id].forEach((tab, idx) => {
-                              console.log(`  Tab ${idx + 1}: ${tab.tab_label} - Visible: ${tab.is_visible}`);
-                            });
-                          }
-                          
-                          return null;
-                        })()}
-                        
                         {/* Loading State */}
                         {!appTabConfigs[selectedAppForTabConfig.id] && (
                           <div className="text-center py-8">
@@ -2070,51 +1690,21 @@ useEffect(() => {
                           <button
                             onClick={async () => {
                               try {
-                                console.log('💾 === SAVE BUTTON CLICKED ===');
-                                console.log('App ID:', selectedAppForTabConfig.id);
-                                console.log('App Name:', selectedAppForTabConfig.name);
-                                console.log('Total tabs found:', appTabConfigs[selectedAppForTabConfig.id]?.length || 0);
-                                
-                                // Collect all checkbox states from the modal
                                 const updates = (appTabConfigs[selectedAppForTabConfig.id] || []).map((appTab, index) => {
                                   const checkbox = document.querySelector(`input[data-tab-id="${appTab.tab_id}"]`) as HTMLInputElement;
-                                  const isVisible = checkbox ? checkbox.checked : false;
-                                  
-                                  console.log(`📋 Tab ${index + 1}:`, {
-                                    tabId: appTab.tab_id,
-                                    tabName: appTab.tab_label || 'Unknown Tab',
-                                    checkboxFound: !!checkbox,
-                                    isChecked: isVisible,
-                                    willSave: isVisible
-                                  });
-                                  
                                   return {
                                     app_id: selectedAppForTabConfig.id,
                                     tab_id: appTab.tab_id,
                                     tab_order: index + 1,
-                                    is_visible: isVisible,
+                                    is_visible: checkbox ? checkbox.checked : false,
                                     tenant_id: tenant?.id
                                   };
                                 });
-                                
-                                console.log('📊 === FINAL DATA TO SAVE ===');
-                                console.log('Total updates:', updates.length);
-                                console.log('Checked tabs:', updates.filter(u => u.is_visible).length);
-                                console.log('Unchecked tabs:', updates.filter(u => !u.is_visible).length);
-                                console.log('Full updates array:', updates);
-                                
-                                // Use bulk operation to save all changes
-                                console.log('🚀 Calling handleBulkTabOperation...');
                                 await handleBulkTabOperation(selectedAppForTabConfig.id, 'save_custom', updates);
-                                
-                                console.log('✅ Tab configurations saved successfully!');
-                                
-                                // Close modal
                                 setShowAppTabConfigModal(false);
                                 setSelectedAppForTabConfig(null);
-                                
                               } catch (error) {
-                                console.error('❌ Error saving tab configurations:', error);
+                                console.error('Error saving tab configurations:', error);
                                 alert('Error saving changes. Please try again.');
                               }
                             }}

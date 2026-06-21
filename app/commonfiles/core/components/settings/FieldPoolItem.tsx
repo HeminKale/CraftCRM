@@ -16,46 +16,21 @@ const FieldPoolItem: React.FC<FieldPoolItemProps> = ({ field, getFieldIcon, onAd
   const [isDragging, setIsDragging] = React.useState(false);
   const [showSectionSelector, setShowSectionSelector] = React.useState(false);
 
-  // Close section selector when clicking outside - TEMPORARILY DISABLED
+  // Close section selector when clicking outside
   useEffect(() => {
-    console.log('🔧 Click outside handler temporarily disabled for debugging');
-    
-    // Temporarily disable click outside handling to restore working state
-    // const handleClickOutside = (event: MouseEvent) => {
-    //   console.log('🔧 Click outside detected:', {
-    //     target: event.target,
-    //     currentRef: ref.current,
-    //     containsTarget: ref.current?.contains(event.target as Node)
-    //   });
-    //   
-    //   if (ref.current && !ref.current.contains(event.target as Node)) {
-    //     console.log('🔧 Closing section selector due to click outside');
-    //     setShowSectionSelector(false);
-    //   }
-    // };
-
-    // if (showSectionSelector) {
-    //   // Add a small delay to prevent immediate closure
-    //   const timeoutId = setTimeout(() => {
-    //     console.log('🔧 Adding click outside handler after 100ms delay');
-    //     document.addEventListener('mousedown', handleClickOutside);
-    //   }, 100);
-    //   
-    //   return () => {
-    //     clearTimeout(timeoutId);
-    //     document.removeEventListener('mousedown', handleClickOutside);
-    //   };
-    // }
-  }, [showSectionSelector]);
-
-  // Debug state changes
-  useEffect(() => {
-    console.log('🔧 showSectionSelector state changed to:', showSectionSelector);
-    if (showSectionSelector) {
-      console.log('🔧 Section selector opened, adding click outside handler with 100ms delay');
-    } else {
-      console.log('🔧 Section selector closed');
-    }
+    if (!showSectionSelector) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setShowSectionSelector(false);
+      }
+    };
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 100);
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, [showSectionSelector]);
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
@@ -74,16 +49,11 @@ const FieldPoolItem: React.FC<FieldPoolItemProps> = ({ field, getFieldIcon, onAd
   }, []);
 
   const handleClick = useCallback(() => {
-    console.log('🔧 Field clicked, setting showSectionSelector to true');
     setShowSectionSelector(true);
   }, []);
 
   const handleSectionSelect = useCallback((section: string) => {
-    console.log('🔧 Section selected:', section);
-    console.log('🔧 Field:', field);
-    console.log('🔧 onAddField function:', onAddField);
     onAddField(field, section);
-    console.log('🔧 onAddField called');
     setShowSectionSelector(false);
   }, [onAddField, field]);
 
@@ -92,9 +62,8 @@ const FieldPoolItem: React.FC<FieldPoolItemProps> = ({ field, getFieldIcon, onAd
   }, []);
 
   return (
-    <div className="relative">
+    <div className="relative" ref={ref}>
       <div
-        ref={ref}
         draggable
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
@@ -119,9 +88,10 @@ const FieldPoolItem: React.FC<FieldPoolItemProps> = ({ field, getFieldIcon, onAd
             {availableSections.map((section) => {
               // Determine if this section can accept fields using actual section types
               const sectionType = sectionTypes[section];
-              const canAcceptFields = section === 'details' || 
-                                    sectionType === 'field' || 
-                                    sectionType === 'mixed';
+              const canAcceptFields = section === 'details' ||
+                                    sectionType === 'field' ||
+                                    sectionType === 'mixed' ||
+                                    sectionType === undefined;  // unknown type defaults to accepting fields
               
               return (
                 <button
@@ -142,7 +112,7 @@ const FieldPoolItem: React.FC<FieldPoolItemProps> = ({ field, getFieldIcon, onAd
                     <span>{section === 'details' ? '📝' : section === 'related_lists' ? '🔗' : '📋'}</span>
                     <span className="capitalize">{section.replace(/_/g, ' ')}</span>
                     {sectionType && <span className="text-xs text-gray-500">({sectionType})</span>}
-                    {!canAcceptFields && <span className="text-xs text-gray-400">(fields only)</span>}
+                    {!canAcceptFields && <span className="text-xs text-gray-400">(related lists only)</span>}
                   </span>
                 </button>
               );

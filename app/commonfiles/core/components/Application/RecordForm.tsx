@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useSupabase } from '../../providers/SupabaseProvider';
+import FileUploadField from './FileUploadField';
 
 // Interfaces for form data and validation
 interface FormFieldValue {
@@ -583,6 +584,14 @@ export default function RecordForm({
               readOnly
               className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-50 text-gray-500 cursor-not-allowed"
               title="This field is automatically populated by the system"
+            />
+          ) : field.type === 'file' || field.type === 'files' ? (
+            <FileUploadField
+              objectId={objectId}
+              fieldId={field.id}
+              fieldLabel={block.label || field.label}
+              recordId={null}
+              multiple={field.type === 'files'}
             />
           ) : (
             <input

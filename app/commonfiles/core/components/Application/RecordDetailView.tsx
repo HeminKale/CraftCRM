@@ -3,9 +3,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useSupabase } from '../../providers/SupabaseProvider';
+import { usePermissions } from '../../providers/PermissionsProvider';
 import { UniversalFieldDisplay, formatColumnLabel } from '../ui/UniversalFieldDisplay';
 import CustomTabRenderer from './CustomTabRenderer';
 import { draftToClientService } from '../../services/DraftToClientService';
+import FileUploadField from './FileUploadField';
+import ClientWorkflowBar from '../custom/External_Client/ClientWorkflowBar';
+import ReviewActionPanel from '../custom/External_Client/ReviewActionPanel';
+import RenewalWorkflowBar from '../custom/Renewal_Client/RenewalWorkflowBar';
+import RenewalActionPanel from '../custom/Renewal_Client/RenewalActionPanel';
+import toast from 'react-hot-toast';
 
 interface RecordDetailViewProps {
   recordId: string;
@@ -196,6 +203,7 @@ export default function RecordDetailView({
   const [isEditing, setIsEditing] = useState(false);
   const [editingValues, setEditingValues] = useState<RecordData>({});
   const [saving, setSaving] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   
   // Custom component state for modal display
   const [activeCustomComponent, setActiveCustomComponent] = useState<{
@@ -209,7 +217,8 @@ export default function RecordDetailView({
   const [referenceLoading, setReferenceLoading] = useState<{ [key: string]: boolean }>({});
   
   
-  const { tenant } = useSupabase();
+  const { tenant, user, userProfile } = useSupabase();
+  const { can } = usePermissions();
   const supabase = createClientComponentClient();
 
   // NEW: Load picklist field options for edit mode
@@ -379,57 +388,28 @@ export default function RecordDetailView({
 
   // Load button details for custom components
   const [buttonDetails, setButtonDetails] = useState<{[key: string]: any}>({});
+  const [customRoleName, setCustomRoleName] = useState<string | null>(null);
   
 
   
   const loadButtonDetails = async () => {
-    if (!tenant?.id) {
-      return;
-    }
-    
+    if (!tenant?.id || !objectId) return;
+
     try {
-      // Get button IDs from layout blocks
-      const buttonIds = layoutBlocks
-        .filter(block => block.block_type === 'button' && block.button_id)
-        .map(block => block.button_id!);
-      
-      if (buttonIds.length === 0) {
-        return;
-      }
-      
-      // Skip RPC since it doesn't exist, go directly to query
-      const { data: directData, error: directError } = await supabase
-        .schema('tenant')
-        .from('button__a')
-        .select('*')
-        .in('id', buttonIds)
-        .eq('tenant_id', tenant.id);
-      
-      if (!directError && directData && directData.length > 0) {
-        // Map the button details by ID
+      const { data, error } = await supabase.rpc('get_object_buttons', {
+        p_object_id: objectId,
+        p_tenant_id: tenant.id,
+      });
+
+      if (!error && data) {
         const detailsMap: {[key: string]: any} = {};
-        directData.forEach((button: any) => {
-          const mappedButton = {
-            id: button.id,
-            name: button.name,
-            api_name: button.name, // Use name as api_name
-            button_type: button.button_type__a,
-            is_active: button.is_active,
-            label: button.label__a,
-            custom_component_path: button.custom_component_path__a,
-            custom_route: button.custom_route__a,
-            action_type: button.action_type__a,
-            action_config: button.action_config__a,
-            button_style: button.button_style__a,
-            button_size: button.button_size__a,
-            display_order: button.display_order__a,
-          };
-          detailsMap[button.id] = mappedButton;
+        data.forEach((button: any) => {
+          detailsMap[button.id] = button;
         });
-        setButtonDetails(prev => ({ ...prev, ...detailsMap }));
+        setButtonDetails(detailsMap);
       }
     } catch (error) {
-      console.error('❌ Error loading button details:', error);
+      console.error('Error loading button details:', error);
     }
   };
 
@@ -438,6 +418,20 @@ export default function RecordDetailView({
       loadButtonDetails();
     }
   }, [layoutBlocks, tenant?.id]);
+
+  // Load custom role name for the current user
+  useEffect(() => {
+    const loadCustomRole = async () => {
+      if (!user?.id) return;
+      try {
+        const { data } = await supabase
+          .rpc('get_tenant_users', { p_tenant_id: tenant?.id });
+        const me = data?.find((u: any) => u.id === user.id);
+        setCustomRoleName(me?.custom_role_name || null);
+      } catch { /* non-critical */ }
+    };
+    if (tenant?.id && user?.id) loadCustomRole();
+  }, [tenant?.id, user?.id]);
 
 
 
@@ -602,7 +596,7 @@ export default function RecordDetailView({
     };
 
     fetchRecordDetail();
-  }, [objectId, recordId, tenant?.id]);
+  }, [objectId, recordId, tenant?.id, refreshKey]);
 
 
   // NEW: Fetch related list data for a specific block
@@ -726,7 +720,12 @@ export default function RecordDetailView({
         if (displayName === 'id' || displayName === 'tenant_id' || displayName === 'created_at' || displayName === 'updated_at') {
           return acc;
         }
-        
+
+        // Skip status__a — only the review RPCs should change workflow status
+        if (displayName === 'status__a' || displayName === 'status') {
+          return acc;
+        }
+
         // Skip empty strings, null, and undefined values
         if (value === '' || value === null || value === undefined) {
           return acc;
@@ -769,6 +768,57 @@ export default function RecordDetailView({
         alert('No changes to save');
         setIsEditing(false);
         return;
+      }
+
+      // ── Date order validation for Renewal Clients workflow ───────
+      if (objectLabel?.toLowerCase().includes('renewal')) {
+        const merged: Record<string, string> = { ...recordData, ...cleanValues };
+        const d = (key: string) => merged[key] ? new Date(merged[key]) : null;
+
+        const stages: [string, string, string][] = [
+          ['intimation_sent_date__a',     'intimation_accepted_date__a',  'Intimation Accepted date must be after Intimation Sent date'],
+          ['intimation_accepted_date__a', 'audit_plan_sent_date__a',      'Audit Plan Sent date must be after Intimation Accepted date'],
+          ['audit_plan_sent_date__a',     'audit_plan_accepted_date__a',  'Audit Plan Accepted date must be after Audit Plan Sent date'],
+          ['audit_plan_accepted_date__a', 'surveillance_audit_date__a',   'Surveillance Audit date must be after Audit Plan Accepted date'],
+          ['surveillance_audit_date__a',  'audit_report_sent_date__a',    'Audit Report Sent date must be after Surveillance Audit date'],
+          ['audit_report_sent_date__a',   'certificates_sent_date__a',    'Certificates Sent date must be after Audit Report Sent date'],
+        ];
+
+        for (const [earlier, later, msg] of stages) {
+          const dEarlier = d(earlier);
+          const dLater   = d(later);
+          if (dEarlier && dLater && dLater <= dEarlier) {
+            toast.error(msg);
+            setSaving(false);
+            return;
+          }
+        }
+      }
+
+      // ── Date order validation for External Clients workflow ──────
+      if (objectId === '62803c4d-9430-4d19-a487-4370d52e062a') {
+        // Merge saved record dates with the values being saved
+        const merged: Record<string, string> = { ...recordData, ...cleanValues };
+        const d = (key: string) => merged[key] ? new Date(merged[key]) : null;
+
+        const stages: [string, string, string][] = [
+          ['Date__a',                        'Application_Accpeted_Date__a',    'Application Accepted date must be after Application Sent date'],
+          ['Application_Accpeted_Date__a',   'Quotation_Received_Date__a',      'Quotation Received date must be after Application Accepted date'],
+          ['Quotation_Received_Date__a',     'Client_Agreement_Signed_Date__a', 'Client Agreement Signed date must be after Quotation Received date'],
+          ['Client_Agreement_Signed_Date__a','Stage_one_plan_Sent_Date__a',     'Stage 1 Plan Sent date must be after Client Agreement Signed date'],
+          ['Stage_one_plan_Sent_Date__a',    'Stage_one_Audit_Done_Date__a',    'Stage 1 Audit Done date must be after Stage 1 Plan Sent date'],
+          ['Stage_one_Audit_Done_Date__a',   'Report_Sent_Date__a',             'Report Sent date must be after Stage 1 Audit Done date'],
+        ];
+
+        for (const [earlier, later, msg] of stages) {
+          const dEarlier = d(earlier);
+          const dLater   = d(later);
+          if (dEarlier && dLater && dLater <= dEarlier) {
+            toast.error(msg);
+            setSaving(false);
+            return;
+          }
+        }
       }
 
       // Log the final values being sent to database
@@ -854,20 +904,28 @@ export default function RecordDetailView({
   };
 
   // Format field value for display
-  const formatFieldValue = (value: any, fieldType: string): string => {
+  const formatFieldValue = (value: any, fieldType: string, fieldName?: string): string => {
     if (value === null || value === undefined) return '-';
-    
+
     switch (fieldType) {
       case 'boolean':
         return value ? 'Yes' : 'No';
       case 'date':
       case 'timestamptz':
-        return new Date(value).toLocaleDateString();
+        try { return new Date(value).toLocaleDateString(); } catch { return String(value); }
       case 'decimal':
       case 'money':
         return typeof value === 'number' ? value.toLocaleString() : value;
       case 'percent':
         return typeof value === 'number' ? `${value}%` : value;
+      case 'picklist': {
+        // Resolve stored value → display label
+        const opts = fieldName
+          ? (picklistOptions[fieldName] || picklistOptions[fieldName + '__a'] || [])
+          : [];
+        const match = opts.find((o: any) => o.value === value);
+        return match?.label || String(value);
+      }
       default:
         return String(value);
     }
@@ -1005,7 +1063,20 @@ export default function RecordDetailView({
         />
       );
     }
-    
+
+    if (field.type === 'file' || field.type === 'files') {
+      return (
+        <FileUploadField
+          objectId={objectId}
+          fieldId={field.id}
+          fieldLabel={field.label}
+          recordId={recordId}
+          multiple={field.type === 'files'}
+          companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
+        />
+      );
+    }
+
     // Default fallback for unknown field types
     return (
       <input
@@ -1243,7 +1314,7 @@ export default function RecordDetailView({
                                 
                                 // Get field value from record data using normalized field names
                                 const fieldValue = findFieldValue(recordData || {}, field.name);
-                                const displayValue = formatFieldValue(fieldValue, field.type);
+                                const displayValue = formatFieldValue(fieldValue, field.type, field.name);
 
                                 return (
                                   <div 
@@ -1253,16 +1324,32 @@ export default function RecordDetailView({
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
                                       {field.label}
                                       {field.is_required && <span className="text-red-500 ml-1">*</span>}
-                                      {isEditing && <span className="text-blue-600 ml-1">(Editing)</span>}
                                     </label>
                                     
-                                    {isEditing ? (
-                                      // Edit mode - show input fields
+                                    {(field.type === 'file' || field.type === 'files') ? (
+                                      <FileUploadField
+                                        objectId={objectId}
+                                        fieldId={field.id}
+                                        fieldLabel={field.label}
+                                        recordId={recordId}
+                                        multiple={field.type === 'files'}
+                                        readOnly={!isEditing || !can('edit', 'field', field.id)}
+                                        companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
+                                      />
+                                    ) : isEditing && can('edit', 'field', field.id) ? (
+                                      // Edit mode — only if user can edit this specific field
                                       renderEditableField(field, fieldValue)
                                     ) : (
-                                      // View mode - show formatted values
-                                      <div className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded border">
+                                      // View mode or field is read-only for this user
+                                      <div className={`text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded border ${
+                                        isEditing && !can('edit', 'field', field.id)
+                                          ? 'opacity-60 cursor-not-allowed'
+                                          : ''
+                                      }`}>
                                         {displayValue}
+                                        {isEditing && !can('edit', 'field', field.id) && (
+                                          <span className="ml-2 text-xs text-gray-400">(read-only)</span>
+                                        )}
                                       </div>
                                     )}
                                   </div>
@@ -1468,42 +1555,13 @@ export default function RecordDetailView({
                       const handleButtonClick = async () => {
                         let currentButtonDetail = buttonDetail;
                         
-                        // If button details are missing, try reloading once
+                        // If button details are missing, reload via RPC and retry
                         if (!currentButtonDetail) {
                           await loadButtonDetails();
-                          
-                          // Get the updated button details directly from the query result
-                          const { data: updatedData, error: updatedError } = await supabase
-                            .schema('tenant')
-                            .from('button__a')
-                            .select('*')
-                            .eq('id', block.button_id)
-                            .eq('tenant_id', tenant?.id)
-                            .single();
-                          
-                          if (updatedData && !updatedError) {
-                            const updatedButtonDetail = {
-                              id: updatedData.id,
-                              name: updatedData.name__a || updatedData.name,
-                              label: updatedData.label__a || updatedData.label,
-                              custom_component_path: updatedData.custom_component_path__a || updatedData.custom_component_path,
-                              button_type: updatedData.button_type__a || updatedData.button_type,
-                              object_id: updatedData.object_id__a || updatedData.object_id,
-                              tenant_id: updatedData.tenant_id__a || updatedData.tenant_id
-                            };
-                            
-                            if (updatedButtonDetail.custom_component_path) {
-                              setActiveCustomComponent({
-                                componentPath: updatedButtonDetail.custom_component_path,
-                                buttonDetail: updatedButtonDetail
-                              });
-                            } else {
-                              alert(`Button "${buttonLabel}" clicked! This button doesn't have a custom component configured.`);
-                            }
-                          } else {
-                            alert(`Button "${buttonLabel}" clicked! Button details not loaded.`);
+                          currentButtonDetail = buttonDetails[block.button_id!];
+                          if (!currentButtonDetail) {
+                            return;
                           }
-                          return;
                         }
                         
                         if (currentButtonDetail) {
@@ -1557,12 +1615,15 @@ export default function RecordDetailView({
               </button>
             </>
           ) : (
-            <button
-              onClick={handleEditToggle}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
-            >
-              Edit Record
-            </button>
+            // Only show Edit Record if user can edit this object
+            can('edit', 'object', objectId) && (
+              <button
+                onClick={handleEditToggle}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+              >
+                Edit Record
+              </button>
+            )
           )}
           
           <button
@@ -1573,6 +1634,54 @@ export default function RecordDetailView({
           </button>
         </div>
       </div>
+
+      {/* Workflow bar + Review panel — only for External Clients object */}
+      {(objectId === '62803c4d-9430-4d19-a487-4370d52e062a' || objectLabel?.toLowerCase().includes('external client')) && recordData && (
+        <>
+          <ClientWorkflowBar
+            recordData={recordData}
+            picklistOptions={
+              picklistOptions['status'] ||
+              picklistOptions['status__a'] ||
+              Object.values(picklistOptions).find(opts =>
+                Array.isArray(opts) && opts.some(o =>
+                  o.label?.toLowerCase().includes('application') ||
+                  o.value?.toLowerCase().includes('application')
+                )
+              ) || []
+            }
+          />
+          <ReviewActionPanel
+            recordId={recordId}
+            recordData={recordData}
+            currentUserRole={userProfile?.role || 'user'}
+            currentCustomRole={customRoleName}
+            currentUserId={user?.id || ''}
+            objectId={objectId}
+            onActionComplete={() => setRefreshKey(k => k + 1)}
+          />
+        </>
+      )}
+
+      {/* Workflow bar + Action panel — only for Renewal Clients object */}
+      {objectLabel?.toLowerCase().includes('renewal') && recordData && (
+        <>
+          <RenewalWorkflowBar
+            status={recordData['status__a'] ?? null}
+            recordData={recordData}
+          />
+          <RenewalActionPanel
+            recordId={recordId}
+            recordData={recordData}
+            objectId={objectId}
+            currentUserRole={userProfile?.role || 'user'}
+            currentCustomRole={customRoleName}
+            currentUserId={user?.id || ''}
+            tenantId={tenant?.id}
+            onActionComplete={() => setRefreshKey(k => k + 1)}
+          />
+        </>
+      )}
 
       {/* NEW: Tab Navigation */}
       {renderTabNavigation()}

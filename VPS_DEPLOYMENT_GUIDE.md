@@ -1,112 +1,122 @@
-# Craft App VPS Deployment Guide
-
-This guide will help you completely replace your Hostinger VPS content with the Craft 2_1 project.
+# CraftCRM — VPS Deployment Guide
 
 ## Prerequisites
 
-- Hostinger VPS with root access
-- Your VPS IP address
-- Domain name (optional but recommended)
-- Supabase project credentials
+- Hostinger VPS (or any Ubuntu 22.04 VPS) with root SSH access
+- Supabase project (database + storage)
+- Domain name (optional but recommended for SSL)
+- GitHub repository: `https://github.com/HeminKale/CraftCRM.git`
 
-## Quick Deployment (Recommended)
+---
 
-### Method 1: Automated Script
+## 1. Environment Variables
 
-1. **Edit the deployment script:**
-   ```bash
-   # Open deploy-to-vps.sh and update these variables:
-   VPS_USER="root"  # Your VPS username
-   VPS_HOST="YOUR_VPS_IP"  # Your VPS IP address
-   VPS_PATH="/var/www/craft-app"  # Desired installation path
-   ```
+Create `.env.production` (copy from `env.example` and fill in real values):
 
-2. **Make the script executable and run:**
-   ```bash
-   chmod +x deploy-to-vps.sh
-   ./deploy-to-vps.sh
-   ```
+```env
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key   # Required for invitation flow
 
-### Method 2: Docker Deployment
+# App URL (used for invitation links)
+NEXT_PUBLIC_APP_URL=https://your-domain.com
 
-1. **Set up environment variables:**
-   ```bash
-   cp env.example .env.production
-   # Edit .env.production with your actual values
-   ```
+# NextAuth (generate a random secret: openssl rand -base64 32)
+NEXTAUTH_URL=https://your-domain.com
+NEXTAUTH_SECRET=your_nextauth_secret
 
-2. **Deploy with Docker:**
-   ```bash
-   # Upload files to VPS
-   scp -r . root@YOUR_VPS_IP:/var/www/craft-app/
-   
-   # SSH into VPS and run
-   ssh root@YOUR_VPS_IP
-   cd /var/www/craft-app
-   docker-compose up -d
-   ```
+# PDF Service
+PDF_SERVICE_URL=http://localhost:8000
 
-## Manual Step-by-Step Deployment
+# Environment
+NODE_ENV=production
+PORT=3000
+```
 
-### Step 1: Prepare Your VPS
+> **SUPABASE_SERVICE_ROLE_KEY is critical** — without it, the invitation accept flow (`/api/auth/accept-invitation`) will fail silently.
+
+---
+
+## 2. Supabase Setup
+
+### Run all migrations in order
+
+Open Supabase SQL editor and run each file from `supabase/migrations/` in numerical order:
+
+```
+001_core_schema_rls.sql
+002_helper_functions_triggers.sql
+...
+215_auto_set_client_user_id.sql
+216_quotation_upload_trigger.sql
+```
+
+> If a migration fails with `ERROR: 42P13: cannot change return type`, run `DROP FUNCTION IF EXISTS public.function_name(args);` first, then re-run the migration.
+
+### Create Supabase Storage bucket
+
+1. Go to Supabase Dashboard → Storage → New Bucket
+2. Name: `tenant-uploads`
+3. Set to **Private** (no public access)
+4. Add an RLS policy to allow authenticated users to upload/read their own tenant's files
+
+### Supabase Auth settings
+
+- Enable **Email** provider
+- Set **Site URL** to your domain: `https://your-domain.com`
+- Add **Redirect URLs**: `https://your-domain.com/auth/callback`
+- Adjust **Rate limits** under Auth → Rate Limits if needed (default is 3 sign-ups/hour per IP)
+
+---
+
+## 3. VPS Installation
+
+### Step 1: Prepare the server
 
 ```bash
-# Connect to your VPS
 ssh root@YOUR_VPS_IP
 
 # Update system
 apt update && apt upgrade -y
 
-# Install required packages
+# Install dependencies
 apt install -y curl wget git nginx certbot python3-certbot-nginx
 
 # Install Node.js 18
 curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
 apt-get install -y nodejs
 
-# Install Python 3.9
+# Install Python 3.9 (for PDF service)
 apt-get install -y python3.9 python3.9-pip python3.9-venv
 
-# Install PM2 for process management
+# Install PM2
 npm install -g pm2
 ```
 
-### Step 2: Upload Your Project
+### Step 2: Clone the repository
 
 ```bash
-# From your local machine
-scp -r C:\Users\hemin\OneDrive\Desktop\Craft\ 2_1\* root@YOUR_VPS_IP:/var/www/craft-app/
-```
-
-### Step 3: Configure Environment
-
-```bash
-# SSH into VPS
-ssh root@YOUR_VPS_IP
+mkdir -p /var/www/craft-app
 cd /var/www/craft-app
-
-# Create production environment file
-nano .env.production
+git clone https://github.com/HeminKale/CraftCRM.git .
 ```
 
-Add your environment variables:
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-NEXTAUTH_URL=https://your-domain.com
-NEXTAUTH_SECRET=your_nextauth_secret
-PDF_SERVICE_URL=http://localhost:8000
-NODE_ENV=production
-```
-
-### Step 4: Install Dependencies and Build
+### Step 3: Configure environment
 
 ```bash
-# Install Node.js dependencies
-npm install --production
+cp env.example .env.production
+nano .env.production
+# Fill in all values from section 1 above
+```
 
-# Build the Next.js application
+### Step 4: Install dependencies and build
+
+```bash
+# Install all Node dependencies (includes signature_pad, xlsx, etc.)
+npm install
+
+# Build the Next.js app
 npm run build
 
 # Set up Python PDF service
@@ -118,10 +128,9 @@ deactivate
 cd ../..
 ```
 
-### Step 5: Configure Process Management
+### Step 5: Process management with PM2
 
 ```bash
-# Create PM2 ecosystem file
 cat > ecosystem.config.js << 'EOF'
 module.exports = {
   apps: [
@@ -130,6 +139,7 @@ module.exports = {
       script: 'npm',
       args: 'start',
       cwd: '/var/www/craft-app',
+      env_file: '/var/www/craft-app/.env.production',
       env: {
         NODE_ENV: 'production',
         PORT: 3000
@@ -140,28 +150,27 @@ module.exports = {
       script: 'main.py',
       cwd: '/var/www/craft-app/services/pdf-service',
       interpreter: '/var/www/craft-app/services/pdf-service/venv/bin/python',
-      env: {
-        PORT: 8000
-      }
+      env: { PORT: 8000 }
     }
   ]
 };
 EOF
 
-# Start applications
 pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
 ```
 
-### Step 6: Configure Nginx
+### Step 6: Nginx configuration
 
 ```bash
-# Create Nginx configuration
 cat > /etc/nginx/sites-available/craft-app << 'EOF'
 server {
     listen 80;
     server_name your-domain.com www.your-domain.com;
+
+    # Increase body size for file uploads (application forms, signatures)
+    client_max_body_size 50M;
 
     location / {
         proxy_pass http://localhost:3000;
@@ -173,6 +182,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
+        proxy_read_timeout 120s;
     }
 
     location /api/pdf/ {
@@ -182,128 +192,157 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 50M;
     }
 }
 EOF
 
-# Enable the site
 ln -sf /etc/nginx/sites-available/craft-app /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
-
-# Test and reload Nginx
 nginx -t && systemctl reload nginx
 ```
 
-### Step 7: Set up SSL (Optional but Recommended)
+### Step 7: SSL certificate
 
 ```bash
-# Get SSL certificate
 certbot --nginx -d your-domain.com -d www.your-domain.com
-
-# Test auto-renewal
-certbot renew --dry-run
+# Follow prompts — certbot will auto-configure Nginx for HTTPS
+certbot renew --dry-run  # Test auto-renewal
 ```
 
-## Post-Deployment Configuration
+---
 
-### 1. Database Setup
-
-If you're using Supabase (recommended):
-1. Create a new Supabase project
-2. Run the migration files from `supabase/migrations/`
-3. Update your environment variables
-
-### 2. Domain Configuration
-
-1. Point your domain to your VPS IP address
-2. Update Nginx configuration with your domain
-3. Get SSL certificate
-
-### 3. Monitoring
+## 4. Firewall
 
 ```bash
-# Check application status
+ufw allow 22
+ufw allow 80
+ufw allow 443
+ufw enable
+ufw status
+```
+
+---
+
+## 5. Updating the app
+
+After pushing changes to GitHub:
+
+```bash
+./update-vps.sh
+# OR manually:
+ssh root@YOUR_VPS_IP
+cd /var/www/craft-app
+git pull origin main
+npm install          # in case new packages were added (e.g. signature_pad)
+npm run build
+pm2 restart craft-app
+```
+
+---
+
+## 6. Key packages installed by `npm install`
+
+These are automatically installed — no manual steps needed:
+
+| Package | Purpose |
+|---|---|
+| `@supabase/supabase-js` | Database + auth + storage client |
+| `@supabase/auth-helpers-nextjs` | Next.js auth helpers |
+| `signature_pad` | Digital signature canvas (client agreement signing) |
+| `xlsx` | Excel file parsing (New Client form extraction) |
+| `jszip` | ZIP file handling |
+| `react-hook-form` | Form state management |
+| `react-hot-toast` | Toast notifications |
+| `lucide-react` | Icons |
+| `react-dnd` | Drag-and-drop (page layout editor) |
+
+---
+
+## 7. Monitoring and logs
+
+```bash
+# Check running processes
 pm2 status
 
-# View logs
-pm2 logs
+# View live logs
+pm2 logs craft-app
+pm2 logs pdf-service
 
-# Restart applications
-pm2 restart all
+# Restart individual services
+pm2 restart craft-app
+pm2 restart pdf-service
 
-# Monitor system resources
+# Nginx logs
+tail -f /var/log/nginx/error.log
+tail -f /var/log/nginx/access.log
+
+# System resources
 htop
+df -h   # disk space
 ```
 
-## Troubleshooting
+---
 
-### Common Issues
+## 8. Troubleshooting
 
-1. **Port already in use:**
-   ```bash
-   sudo lsof -i :3000
-   sudo kill -9 PID
-   ```
+### App won't start
+```bash
+pm2 logs craft-app --lines 50
+# Most common cause: missing .env.production or wrong SUPABASE_SERVICE_ROLE_KEY
+```
 
-2. **Permission issues:**
-   ```bash
-   sudo chown -R www-data:www-data /var/www/craft-app
-   sudo chmod -R 755 /var/www/craft-app
-   ```
+### File uploads failing
+- Confirm `tenant-uploads` bucket exists in Supabase Storage
+- Confirm bucket is set to **Private**
+- Confirm `SUPABASE_SERVICE_ROLE_KEY` is set in `.env.production`
 
-3. **Nginx configuration errors:**
-   ```bash
-   sudo nginx -t
-   sudo systemctl reload nginx
-   ```
+### Invitation links not working
+- Confirm `NEXT_PUBLIC_APP_URL` matches your actual domain
+- Confirm Supabase Redirect URLs include `https://your-domain.com/auth/callback`
 
-4. **Application not starting:**
-   ```bash
-   pm2 logs craft-app
-   pm2 logs pdf-service
-   ```
+### Signature pad not rendering
+- Run `npm install` again — `signature_pad` must be present in `node_modules`
+- Check browser console for `signature_pad` import errors
 
-### Log Locations
+### Database errors after deployment
+- Run any new migrations from `supabase/migrations/` that haven't been applied yet
+- Check migration numbers — they're sequential; gaps indicate unapplied migrations
 
-- Application logs: `pm2 logs`
-- Nginx logs: `/var/log/nginx/error.log`
-- System logs: `journalctl -u nginx`
+### Port already in use
+```bash
+sudo lsof -i :3000
+sudo kill -9 <PID>
+pm2 restart craft-app
+```
 
-## Security Considerations
+---
 
-1. **Firewall setup:**
-   ```bash
-   ufw allow 22
-   ufw allow 80
-   ufw allow 443
-   ufw enable
-   ```
+## 9. Backup
 
-2. **Regular updates:**
-   ```bash
-   apt update && apt upgrade -y
-   npm update
-   ```
+```bash
+# Run the included backup script
+chmod +x backup-vps.sh
+./backup-vps.sh
 
-3. **Backup strategy:**
-   ```bash
-   # Create backup script
-   tar -czf craft-app-backup-$(date +%Y%m%d).tar.gz /var/www/craft-app
-   ```
+# Or manual backup
+ssh root@YOUR_VPS_IP "tar -czf /tmp/craft-backup-$(date +%Y%m%d).tar.gz /var/www/craft-app --exclude node_modules --exclude .next"
+scp root@YOUR_VPS_IP:/tmp/craft-backup-*.tar.gz ./backups/
+```
 
-## Performance Optimization
+---
 
-1. **Enable Nginx caching**
-2. **Set up CDN for static assets**
-3. **Configure database connection pooling**
-4. **Monitor and optimize memory usage**
+## 10. Post-deployment checklist
 
-## Support
-
-If you encounter any issues:
-1. Check the logs first
-2. Verify all environment variables
-3. Ensure all services are running
-4. Check firewall and port configurations
-
-Your Craft App should now be running on your VPS! 🚀
+- [ ] All migrations run in Supabase (001 through 216)
+- [ ] `tenant-uploads` storage bucket created and set to private
+- [ ] `.env.production` filled with real Supabase credentials
+- [ ] `NEXT_PUBLIC_APP_URL` set to actual domain
+- [ ] Supabase Auth Site URL and Redirect URLs updated to production domain
+- [ ] SSL certificate installed
+- [ ] Firewall configured
+- [ ] PM2 processes running (`pm2 status`)
+- [ ] Test sign-up flow works
+- [ ] Test invitation flow works (copy link from UI, open in browser)
+- [ ] Test file upload on External Client record
+- [ ] Test digital signature on agreement

@@ -11,7 +11,10 @@ import CustomButtonTab from '../custom/CustomButtonTab';
 import ClientDraftGenerator from '../custom/ClientDraftGenerator';
 import ClientSoftCopyGenerator from '../custom/ClientSoftCopyGenerator';
 import ClientPrintableGenerator from '../custom/ClientPrintableGenerator';
-import YourCustomComponent from '../custom/component'; // Add your component import
+import YourCustomComponent from '../custom/component';
+import NewClientForm from '../custom/External_Client/NewClientForm';
+import ClientSummaryTab from '../custom/External_Client/ClientSummaryTab';
+import NewRenewalForm from '../custom/Renewal_Client/NewRenewalForm';
 
 interface CustomTabRendererProps {
   componentPath: string;
@@ -22,6 +25,8 @@ interface CustomTabRendererProps {
   recordData?: any;
   tenantId?: string;
   selectedRecordIds?: string[];
+  onSuccess?: () => void;
+  onCancel?: () => void;
 }
 
 interface CustomComponentProps {
@@ -30,15 +35,17 @@ interface CustomComponentProps {
   [key: string]: any;
 }
 
-export default function CustomTabRenderer({ 
-  componentPath, 
-  tabId, 
+export default function CustomTabRenderer({
+  componentPath,
+  tabId,
   tabLabel,
   recordId,
   objectId,
   recordData,
   tenantId,
-  selectedRecordIds
+  selectedRecordIds,
+  onSuccess,
+  onCancel,
 }: CustomTabRendererProps) {
   const [CustomComponent, setCustomComponent] = useState<React.ComponentType<CustomComponentProps> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,7 +57,6 @@ export default function CustomTabRenderer({
         setLoading(true);
         setError(null);
 
-        console.log('🔍 Loading custom component:', componentPath);
         const componentName = componentPath.split('/').pop()?.trim();
         
         // Component registry - map component names to actual components
@@ -62,12 +68,13 @@ export default function CustomTabRenderer({
           'ClientDraftGenerator': ClientDraftGenerator,
           'ClientSoftCopyGenerator': ClientSoftCopyGenerator,
           'ClientPrintableGenerator': ClientPrintableGenerator,
-          'YourCustomComponent': YourCustomComponent, // Add your component to registry
+          'YourCustomComponent': YourCustomComponent,
+          'NewClientForm': NewClientForm,
+          'ClientSummaryTab': ClientSummaryTab,
+          'NewRenewalForm': NewRenewalForm,
           // Add more components here as needed
         };
         
-        console.log('🔍 Available components:', Object.keys(componentRegistry));
-        console.log('🔍 Looking for component:', componentName);
         
         const Component = componentRegistry[componentName];
         
@@ -75,11 +82,9 @@ export default function CustomTabRenderer({
           throw new Error(`Component '${componentName}' not found in registry. Available: ${Object.keys(componentRegistry).join(', ')}`);
         }
         
-        console.log('✅ Component found in registry:', componentName);
         
         if (typeof Component === 'function') {
           setCustomComponent(() => Component);
-          console.log('✅ Component set successfully');
         } else {
           throw new Error('Component is not a valid React component');
         }
@@ -92,7 +97,6 @@ export default function CustomTabRenderer({
     };
 
     if (componentPath) {
-      console.log('🚀 Starting component load for:', componentPath);
       loadCustomComponent();
     }
   }, [componentPath]);
@@ -145,28 +149,17 @@ export default function CustomTabRenderer({
           </div>
         </div>
       }>
-        <CustomComponent 
-          tabId={tabId} 
+        <CustomComponent
+          tabId={tabId}
           tabLabel={tabLabel}
           recordId={recordId}
           objectId={objectId}
           recordData={recordData}
           tenantId={tenantId}
           selectedRecordIds={selectedRecordIds}
+          onSuccess={onSuccess}
+          onCancel={onCancel}
         />
-        {(() => {
-          console.log('🔍 === CUSTOM TAB RENDERER PROPS ===');
-          console.log('🔍 tabId:', tabId);
-          console.log('🔍 recordId:', recordId);
-          console.log('🔍 objectId:', objectId);
-          console.log('🔍 recordData:', recordData);
-          console.log('🔍 recordData is array:', Array.isArray(recordData));
-          console.log('🔍 recordData length:', recordData?.length);
-          console.log('🔍 selectedRecordIds:', selectedRecordIds);
-          console.log('🔍 selectedRecordIds length:', selectedRecordIds?.length);
-          console.log('🔍 tenantId:', tenantId);
-          return null;
-        })()}
       </Suspense>
     );
   }

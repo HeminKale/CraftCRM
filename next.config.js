@@ -2,8 +2,19 @@
 const nextConfig = {
   experimental: {
     appDir: true,
+    serverComponentsExternalPackages: ['exceljs', 'pdf-lib'],
   },
   output: 'standalone',
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // Prevent webpack from bundling native Node modules used by exceljs
+      config.externals = [
+        ...(Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean)),
+        'exceljs',
+      ];
+    }
+    return config;
+  },
   images: {
     domains: ['localhost'],
   },
