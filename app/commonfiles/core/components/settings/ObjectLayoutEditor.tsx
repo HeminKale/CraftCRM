@@ -338,7 +338,19 @@ export default function ObjectLayoutEditor({
       }
 
       if (savedBlocks) {
-        setLayoutBlocks(savedBlocks);
+        // Merge display_columns back — the RPC doesn't return them but we have them in local state
+        setLayoutBlocks(prev => {
+          const displayColumnsMap: Record<string, string[]> = {};
+          prev.forEach(b => {
+            if (b.display_columns && b.display_columns.length > 0) {
+              displayColumnsMap[b.id] = b.display_columns;
+            }
+          });
+          return savedBlocks.map((b: LayoutBlock) => ({
+            ...b,
+            display_columns: displayColumnsMap[b.id] ?? b.display_columns ?? []
+          }));
+        });
       } else {
         await fetchLayoutBlocks(selectedObject);
       }

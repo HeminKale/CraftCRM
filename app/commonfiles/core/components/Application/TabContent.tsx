@@ -410,25 +410,7 @@ export default function TabContent({
     console.log('🔍 Set availableFieldsForDisplay to:', existingFieldNames);
     console.log('🔍 State update called for availableFieldsForDisplay');
     
-    // Set default selected fields - include more fields by default
-    const defaultSelected = existingFieldNames.filter((fieldName: string) => 
-      fieldName === 'name' || 
-      fieldName === 'created_at' || 
-      fieldName === 'updated_at' ||
-      fieldName === 'is_active' ||
-      fieldName === 'type__a' ||
-      fieldName === 'scope__a' ||
-      fieldName === 'Client_name' ||
-      fieldName === 'Client_name__a' ||
-      fieldName === 'isoStandard__a' ||
-      fieldName === 'initialRegistrationDate__a'
-    );
-    console.log('🔍 Default selected fields:', defaultSelected);
-    console.log('🔍 Default selected count:', defaultSelected.length);
-    setSelectedFieldsForDisplay(defaultSelected);
-    console.log('🔍 State update called for selectedFieldsForDisplay');
-    
-    // Try to fetch additional field info from RPC (optional)
+    // fetchAvailableFieldsForDisplay will load saved selection from localStorage
     await fetchAvailableFieldsForDisplay();
     
     // Show fields to display modal
@@ -476,34 +458,15 @@ export default function TabContent({
   const fetchAvailableFieldsForDisplay = async () => {
     try {
       setFieldsDisplayLoading(true);
-      console.log('🔍 Fetching available fields using getFieldNames()...');
-      
-      // Use getFieldNames() which correctly extracts fields from record.fields
+
       const fieldNames = getFieldNames();
-      console.log('🔍 Using field names from getFieldNames():', fieldNames);
-      
+
       if (fieldNames && fieldNames.length > 0) {
         setAvailableFieldsForDisplay(fieldNames);
-        
-        // Set default selected fields - include more fields by default
-        const defaultSelected = fieldNames.filter((fieldName: string) => 
-          fieldName === 'name' || 
-          fieldName === 'created_at' || 
-          fieldName === 'updated_at' ||
-          fieldName === 'is_active' ||
-          fieldName === 'type__a' ||
-          fieldName === 'scope__a' ||
-          fieldName === 'Client_name' ||
-          fieldName === 'Client_name__a' ||
-          fieldName === 'isoStandard__a' ||
-          fieldName === 'initialRegistrationDate__a'
-        );
-        setSelectedFieldsForDisplay(defaultSelected);
-        console.log('✅ Set available fields:', fieldNames);
-        console.log('✅ Set default selected:', defaultSelected);
+        // selectedFieldsForDisplay is restored from localStorage in the records useEffect
+        // (records must be loaded first so getFieldNames() returns valid field names)
       } else {
         setAvailableFieldsForDisplay([]);
-        console.log('⚠️ No field names available from getFieldNames()');
       }
     } catch (error) {
       console.error('❌ Error fetching fields:', error);
@@ -590,17 +553,12 @@ export default function TabContent({
     });
   };
 
-  // NEW: Handle save field display preferences
+  // Handle save field display preferences
   const handleSaveFieldDisplayPreferences = async () => {
-    console.log('🔍 Saving field display preferences:', selectedFieldsForDisplay);
-    
     try {
-      // TODO: Implement database save functionality
-      // For now, just close the modal
+      const storageKey = `fields_display_${objectId}`;
+      localStorage.setItem(storageKey, JSON.stringify(selectedFieldsForDisplay));
       setShowFieldsToDisplayModal(false);
-      
-      // Show success message
-      console.log('✅ Field display preferences saved successfully');
     } catch (error) {
       console.error('❌ Error saving field display preferences:', error);
     }
@@ -613,7 +571,7 @@ export default function TabContent({
 
   // NEW: Handle select none fields
   const handleSelectNoneFields = () => {
-    setSelectedFieldsForDisplay(['name']); // Keep only required field
+    setSelectedFieldsForDisplay([]);
   };
 
   // NEW: Handle save selected buttons
@@ -825,12 +783,29 @@ export default function TabContent({
     return filterFields;
   };
 
-  // NEW: Update available fields when records change
+  // Update available fields and restore saved display selection when records load
   useEffect(() => {
     if (records.length > 0) {
       const filterFields = getAvailableFieldsForFiltering();
       setAvailableFields(filterFields);
-      console.log('✅ Available fields updated from records:', filterFields);
+
+      // Restore saved field display selection from localStorage, default to name only
+      const fieldNames = getFieldNames();
+      if (fieldNames.length > 0) {
+        const storageKey = `fields_display_${objectId}`;
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+          try {
+            const parsed: string[] = JSON.parse(saved);
+            const valid = parsed.filter((f: string) => fieldNames.includes(f));
+            setSelectedFieldsForDisplay(valid.length > 0 ? valid : ['name']);
+          } catch {
+            setSelectedFieldsForDisplay(['name']);
+          }
+        } else {
+          setSelectedFieldsForDisplay(['name']);
+        }
+      }
     }
   }, [records]);
 
@@ -1652,9 +1627,6 @@ export default function TabContent({
                   : `There are no records in this ${tabLabel.toLowerCase()} yet.`
                 }
               </p>
-              <p className="text-xs text-gray-400 mb-6">
-                The system is ready to display records when they become available.
-              </p>
              
             </div>
           </div>
@@ -1709,19 +1681,6 @@ export default function TabContent({
               </div>
             )}
 
-            {/* Table Info Bar */}
-            <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <span className="text-sm text-gray-500">
-                    {records.length} record{records.length !== 1 ? 's' : ''}
-                  </span>
-                </div>
-                <div className="text-sm text-gray-500">
-                  {displayFieldNames.length} field{displayFieldNames.length !== 1 ? 's' : ''} displayed
-                </div>
-              </div>
-            </div>
 
             {/* Data Table Content */}
             {console.log('🔍 DataTable Props Debug:', {
@@ -2432,25 +2391,20 @@ export default function TabContent({
                             </div>
                           ) : (
                             availableFieldsForDisplay.map((fieldName) => {
-                              const isRequired = fieldName === 'name';
                               const isSelected = selectedFieldsForDisplay.includes(fieldName);
-                              
+
                               return (
                                 <label key={fieldName} className="flex items-center justify-between">
                                   <div className="flex items-center">
-                                    <input 
-                                      type="checkbox" 
+                                    <input
+                                      type="checkbox"
                                       checked={isSelected}
-                                      disabled={isRequired}
                                       onChange={(e) => handleFieldSelectionForDisplay(fieldName, e.target.checked)}
-                                      className="mr-3 text-blue-600 focus:ring-blue-500 disabled:opacity-50" 
+                                      className="mr-3 text-blue-600 focus:ring-blue-500"
                                     />
                                     <span className="text-sm font-medium text-gray-700">
                                       {getFieldLabel(fieldName)}
                                     </span>
-                                    {isRequired && (
-                                      <span className="ml-2 text-xs text-gray-500">(Required)</span>
-                                    )}
                                   </div>
                                 </label>
                               );

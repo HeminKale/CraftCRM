@@ -162,9 +162,14 @@ const fetchChildFields = async (childTable: string) => {
           return fieldName || 'unknown_field';
         }).filter(Boolean);
         
-        // First try to use existing display_columns from layoutBlock if available
-        if (layoutBlock?.display_columns && layoutBlock.display_columns.length > 0) {
-          const validExistingFields = layoutBlock.display_columns.filter(fieldName => 
+        // Prefer display_columns from layoutBlock (latest local state), fall back to relatedList (DB)
+        const savedColumns = (layoutBlock?.display_columns && layoutBlock.display_columns.length > 0)
+          ? layoutBlock.display_columns
+          : (relatedList?.display_columns && relatedList.display_columns.length > 0)
+            ? relatedList.display_columns
+            : null;
+        if (savedColumns) {
+          const validExistingFields = savedColumns.filter(fieldName =>
             availableFieldNames.includes(fieldName)
           );
           if (validExistingFields.length > 0) {
