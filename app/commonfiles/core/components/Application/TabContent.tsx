@@ -556,8 +556,13 @@ export default function TabContent({
   // Handle save field display preferences
   const handleSaveFieldDisplayPreferences = async () => {
     try {
-      const storageKey = `fields_display_${objectId}`;
-      localStorage.setItem(storageKey, JSON.stringify(selectedFieldsForDisplay));
+      if (objectId && tenant?.id) {
+        await supabase.rpc('save_user_field_preferences', {
+          p_object_id: objectId,
+          p_tenant_id: tenant.id,
+          p_selected_fields: selectedFieldsForDisplay
+        });
+      }
       setShowFieldsToDisplayModal(false);
     } catch (error) {
       console.error('❌ Error saving field display preferences:', error);
@@ -789,22 +794,18 @@ export default function TabContent({
       const filterFields = getAvailableFieldsForFiltering();
       setAvailableFields(filterFields);
 
-      // Restore saved field display selection from localStorage, default to name only
       const fieldNames = getFieldNames();
-      if (fieldNames.length > 0) {
-        const storageKey = `fields_display_${objectId}`;
-        const saved = localStorage.getItem(storageKey);
-        if (saved) {
-          try {
-            const parsed: string[] = JSON.parse(saved);
-            const valid = parsed.filter((f: string) => fieldNames.includes(f));
-            setSelectedFieldsForDisplay(valid.length > 0 ? valid : ['name']);
-          } catch {
-            setSelectedFieldsForDisplay(['name']);
-          }
-        } else {
+      if (fieldNames.length > 0 && objectId && tenant?.id) {
+        supabase.rpc('get_user_field_preferences', {
+          p_object_id: objectId,
+          p_tenant_id: tenant.id
+        }).then(({ data }) => {
+          const saved: string[] = Array.isArray(data) ? data : [];
+          const valid = saved.filter((f: string) => fieldNames.includes(f));
+          setSelectedFieldsForDisplay(valid.length > 0 ? valid : ['name']);
+        }).catch(() => {
           setSelectedFieldsForDisplay(['name']);
-        }
+        });
       }
     }
   }, [records]);
