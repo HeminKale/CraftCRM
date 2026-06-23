@@ -1274,7 +1274,7 @@ export default function RecordDetailView({
           )}
 
           {sections.map(section => {
-            const sectionBlocks = layoutBlocks.filter(block => block.section === section);
+            const sectionBlocks = layoutBlocks.filter(block => block.section === section && block.is_visible);
             
             if (sectionBlocks.length === 0) return null;
 
@@ -1539,7 +1539,7 @@ export default function RecordDetailView({
           {/* Custom Action Buttons */}
           {(() => {
             // Get all button blocks from layout (buttons can be in any section)
-            const buttonBlocks = layoutBlocks.filter(block => block.block_type === 'button');
+            const buttonBlocks = layoutBlocks.filter(block => block.block_type === 'button' && block.is_visible);
             
             if (buttonBlocks.length === 0) return null;
 
