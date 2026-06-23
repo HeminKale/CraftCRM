@@ -796,16 +796,19 @@ export default function TabContent({
 
       const fieldNames = getFieldNames();
       if (fieldNames.length > 0 && objectId && tenant?.id) {
-        supabase.rpc('get_user_field_preferences', {
-          p_object_id: objectId,
-          p_tenant_id: tenant.id
-        }).then(({ data }) => {
-          const saved: string[] = Array.isArray(data) ? data : [];
-          const valid = saved.filter((f: string) => fieldNames.includes(f));
-          setSelectedFieldsForDisplay(valid.length > 0 ? valid : ['name']);
-        }).catch(() => {
-          setSelectedFieldsForDisplay(['name']);
-        });
+        (async () => {
+          try {
+            const { data } = await supabase.rpc('get_user_field_preferences', {
+              p_object_id: objectId,
+              p_tenant_id: tenant.id
+            });
+            const saved: string[] = Array.isArray(data) ? data : [];
+            const valid = saved.filter((f: string) => fieldNames.includes(f));
+            setSelectedFieldsForDisplay(valid.length > 0 ? valid : ['name']);
+          } catch {
+            setSelectedFieldsForDisplay(['name']);
+          }
+        })();
       }
     }
   }, [records]);
