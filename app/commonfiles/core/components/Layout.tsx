@@ -6,6 +6,7 @@ import Header from './Header';
 import TabContent from './Application/TabContent';
 import { useCurrentApp } from '../hooks/useCurrentApp';
 import { useSupabase } from '../providers/SupabaseProvider';
+import { usePermissions } from '../providers/PermissionsProvider';
 
 
 interface LayoutProps {
@@ -28,6 +29,7 @@ export default function Layout({ children, mode = 'app' }: LayoutProps) {
   const [tabsLoading, setTabsLoading] = useState(false);
   const { selectedApp, updateSelectedApp, loading: appLoading } = useCurrentApp();
   const { tenant } = useSupabase();
+  const { can } = usePermissions();
   const supabase = createClientComponentClient();
   
   // Handle URL parameters for child record navigation
@@ -120,14 +122,18 @@ export default function Layout({ children, mode = 'app' }: LayoutProps) {
               console.log('🔗 Found child object tab:', childObjectTab);
               setActiveTab(childObjectTab.id);
             } else {
-              console.log('⚠️ Child object tab not found, using first tab');
-              if (tabDetails.length > 0) {
-                setActiveTab(tabDetails[0].id);
-              }
+              const firstAllowedTab = tabDetails.find(tab => can('read', 'tab', tab.id));
+              if (firstAllowedTab) setActiveTab(firstAllowedTab.id);
+              else if (tabDetails.length > 0) setActiveTab(tabDetails[0].id);
             }
           } else if (tabDetails.length > 0) {
-            // Always land on first tab — handles refresh and app switch
-            setActiveTab(tabDetails[0].id);
+            // Land on first tab the user has permission to read
+            const firstAllowedTab = tabDetails.find(tab => can('read', 'tab', tab.id));
+            if (firstAllowedTab) {
+              setActiveTab(firstAllowedTab.id);
+            } else {
+              setActiveTab(tabDetails[0].id);
+            }
           }
         }
       } catch (err) {
