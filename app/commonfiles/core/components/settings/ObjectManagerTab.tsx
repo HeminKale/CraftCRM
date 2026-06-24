@@ -5,6 +5,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import DataTable from '../DataTable';
+import ObjectSharingPanel from './ObjectSharingPanel';
 import Message from '../ui/Message';
 import ObjectLayoutEditor, { FieldMetadata } from './ObjectLayoutEditor';
 
@@ -82,12 +83,13 @@ interface ObjectManagerTabProps {
 }
 
 const objectDetailSections = [
-  { id: 'details', label: 'Details', icon: '📋' },
-  { id: 'fields', label: 'Fields', icon: '📝' },
+  { id: 'details',  label: 'Details',          icon: '📋' },
+  { id: 'fields',   label: 'Fields',            icon: '📝' },
  // { id: 'relatedLists', label: 'Related Lists', icon: '🔗' },
-  { id: 'layout', label: 'Page Layout', icon: '🎨' },
-  { id: 'buttons', label: 'Buttons', icon: '🔘' },
-  { id: 'validation', label: 'Validation Rules', icon: '✅' },
+  { id: 'layout',   label: 'Page Layout',       icon: '🎨' },
+  { id: 'buttons',  label: 'Buttons',           icon: '🔘' },
+  { id: 'validation', label: 'Validation Rules',icon: '✅' },
+  { id: 'sharing',  label: 'Sharing',           icon: '🔒' },
 ];
 
 const dataTypes = [
@@ -119,7 +121,7 @@ const dataTypes = [
 ];
 
 export default function ObjectManagerTab({ user, userProfile, tenant }: ObjectManagerTabProps) {
-  const [selectedSection, setSelectedSection] = useState<'details' | 'fields' | 'layout' | 'buttons' | 'validation'>('details');
+  const [selectedSection, setSelectedSection] = useState<'details' | 'fields' | 'layout' | 'buttons' | 'validation' | 'sharing'>('details');
   const [selectedObject, setSelectedObject] = useState<string | null>(null);
   const [selectedObjectData, setSelectedObjectData] = useState<Object | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2108,6 +2110,14 @@ export default function ObjectManagerTab({ user, userProfile, tenant }: ObjectMa
                         <p className="text-gray-600">Validation rules will be implemented here.</p>
                       </div>
                     </div>
+                  )}
+
+                  {selectedSection === 'sharing' && selectedObject && (
+                    <ObjectSharingPanel
+                      objectId={selectedObject}
+                      tenant={tenant}
+                      userProfile={userProfile}
+                    />
                   )}
                 </div>
               </div>

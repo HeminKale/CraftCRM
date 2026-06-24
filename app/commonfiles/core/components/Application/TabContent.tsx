@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import DataTable from '../DataTable';
 import RecordDetailView from './RecordDetailView';
@@ -11,6 +11,7 @@ import { RecordListService } from './RecordList/RecordListService';
 import { RecordList, FilterCriteria, FilterFieldInfo } from './RecordList/types';
 import { FilterBuilder } from './RecordList/FilterBuilder';
 import { UniversalFieldDisplay, formatColumnLabel } from '../ui/UniversalFieldDisplay';
+import { useUserMap, resolveUserValue } from '../../hooks/useUserMap';
 import CustomTabRenderer from './CustomTabRenderer';
 import * as XLSX from 'xlsx';
 import { draftToClientService } from '../../services/DraftToClientService';
@@ -150,6 +151,19 @@ export default function TabContent({
  
   const { tenant, user } = useSupabase();
   const supabase = createClientComponentClient();
+  const userMap = useUserMap();
+
+  // Re-resolve created_by / updated_by whenever records or userMap changes.
+  // This ensures names appear even if userMap loads after records.
+  const resolvedRecords = useMemo(() => {
+    if (Object.keys(userMap).length === 0) return records;
+    return records.map(r => {
+      const fields = { ...r.fields };
+      if (fields.created_by) fields.created_by = resolveUserValue(fields.created_by, userMap);
+      if (fields.updated_by) fields.updated_by = resolveUserValue(fields.updated_by, userMap);
+      return { ...r, fields };
+    });
+  }, [records, userMap]);
 
 
 
@@ -1698,7 +1712,7 @@ export default function TabContent({
             })}
             <DataTable
             title=""
-            data={records}
+            data={resolvedRecords}
             searchKeys={displayFieldNames as any}
             enableSelection={true}
             selectedItems={selectedRecordIds}

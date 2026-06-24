@@ -13,6 +13,7 @@ import ReviewActionPanel from '../custom/External_Client/ReviewActionPanel';
 import RenewalWorkflowBar from '../custom/Renewal_Client/RenewalWorkflowBar';
 import RenewalActionPanel from '../custom/Renewal_Client/RenewalActionPanel';
 import toast from 'react-hot-toast';
+import { useUserMap, resolveUserValue } from '../../hooks/useUserMap';
 
 interface RecordDetailViewProps {
   recordId: string;
@@ -83,7 +84,7 @@ type TabType = 'information' | string; // 'information' or child object ID
 
 // Helper function to check if a field is a system field
 const isSystemField = (fieldName: string): boolean => {
-  const systemFields = ['created_at', 'updated_at', 'created_by', 'updated_by'];
+  const systemFields = ['created_at', 'updated_at', 'created_by', 'updated_by', 'record_owner__a'];
   return systemFields.includes(fieldName);
 };
 
@@ -215,11 +216,10 @@ export default function RecordDetailView({
   const [picklistOptions, setPicklistOptions] = useState<{ [key: string]: any[] }>({});
   const [referenceOptions, setReferenceOptions] = useState<{ [key: string]: any[] }>({});
   const [referenceLoading, setReferenceLoading] = useState<{ [key: string]: boolean }>({});
-  
-  
   const { tenant, user, userProfile } = useSupabase();
   const { can } = usePermissions();
   const supabase = createClientComponentClient();
+  const userMap = useUserMap();
 
   // NEW: Load picklist field options for edit mode
   useEffect(() => {
@@ -907,6 +907,11 @@ export default function RecordDetailView({
   const formatFieldValue = (value: any, fieldType: string, fieldName?: string): string => {
     if (value === null || value === undefined) return '-';
 
+    // Resolve user UUID → display name for audit and owner fields
+    if (fieldName === 'created_by' || fieldName === 'updated_by' || fieldName === 'record_owner__a') {
+      return resolveUserValue(value, userMap);
+    }
+
     switch (fieldType) {
       case 'boolean':
         return value ? 'Yes' : 'No';
@@ -1371,29 +1376,54 @@ export default function RecordDetailView({
                               .map(block => {
                                 if (block.block_type === 'field' && block.field_id) {
                                   const field = fieldMetadata.find(f => f.id === block.field_id);
-                                  
                                   if (!field) return null;
-                                  
-                                  // Get field value from record data using normalized field names
-                                  const fieldValue = findFieldValue(recordData || {}, field.name);
-                                  const displayValue = formatFieldValue(fieldValue, field.type);
 
+                                  const fieldValue = findFieldValue(recordData || {}, field.name);
+                                  const displayValue = formatFieldValue(fieldValue, field.type, field.name);
+
+                                  // record_owner__a: editable user picker
+                                  if (field.name === 'record_owner__a') {
+                                    return (
+                                      <div key={block.id} className="md:col-span-1">
+                                        <label className="block text-sm font-medium text-gray-500 mb-1">
+                                          {field.label}
+                                        </label>
+                                        {isEditing && can('edit', 'field', field.id) ? (
+                                          <select
+                                            value={editingValues['record_owner__a'] || fieldValue || ''}
+                                            onChange={e => setEditingValues(prev => ({ ...prev, record_owner__a: e.target.value }))}
+                                            className="block w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                                          >
+                                            <option value="">— unassigned —</option>
+                                            {Object.entries(userMap).map(([uid, name]) => (
+                                              <option key={uid} value={uid}>{name}</option>
+                                            ))}
+                                          </select>
+                                        ) : (
+                                          <div className="text-sm text-gray-900 bg-white border border-gray-300 rounded-md px-3 py-2">
+                                            {displayValue}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+
+                                  // All other system fields: read-only
                                   return (
-                                    <div 
-                                      key={block.id} 
+                                    <div
+                                      key={block.id}
                                       className={`${block.width === 'full' ? 'md:col-span-2' : 'md:col-span-1'}`}
                                     >
                                       <label className="block text-sm font-medium text-gray-500 mb-1">
                                         {field.label}
                                       </label>
-                                      
                                       <div className="text-sm text-gray-900 bg-white border border-gray-300 rounded-md px-3 py-2">
                                         {displayValue}
                                       </div>
                                     </div>
                                   );
                                 }
-                                
+
                                 return null;
                               })}
                           </div>
