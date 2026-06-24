@@ -65,7 +65,7 @@ async function parseExcel(f: File): Promise<Record<string, string>> {
 
 export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel }: Props) {
   const supabase = createClientComponentClient();
-  const { userProfile } = useSupabase();
+  const { user } = useSupabase();
 
   const [date] = useState(() => new Date().toISOString().split('T')[0]);
   const [entries, setEntries] = useState<ParsedEntry[]>([]);
@@ -136,9 +136,11 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
   const createRecord = async (entry: ParsedEntry, appFormFieldId: string | null) => {
     const recordData: Record<string, string> = {
       ...entry.fields,
-      Date__a:   date,
-      status__a: 'Application_Sent',
-      name:      entry.fields['name'] || entry.fields['Company_name__a'] || 'New Client',
+      Date__a:    date,
+      status__a:  'Application_Sent',
+      name:       entry.fields['name'] || entry.fields['Company_name__a'] || 'New Client',
+      created_by: user?.id || '',
+      updated_by: user?.id || '',
     };
 
     const { data: createData, error: createError } = await supabase.rpc('create_object_record', {

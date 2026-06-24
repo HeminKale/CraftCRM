@@ -6,6 +6,7 @@ import DataTable from '../DataTable';
 import { useSupabase } from '../../providers/SupabaseProvider';
 import UserManagement from './UserManagement';
 import PermissionSets from './PermissionSets';
+import SharingOverrides from './SharingOverrides';
 
 interface HomeTabProps {
   user: any;
@@ -14,16 +15,17 @@ interface HomeTabProps {
 }
 
 const homeSections = [
-  { id: 'profile', label: 'Profile Settings', icon: '👤' },
-  { id: 'users_roles', label: 'Users & Roles', icon: '👥' },
-  { id: 'permission_sets', label: 'Permission Sets', icon: '🔑' },
-  { id: 'tab_settings', label: 'Tab Settings', icon: '📑' },
-  { id: 'app_manager', label: 'App Manager', icon: '📱' },
-  { id: 'system_settings', label: 'System Settings', icon: '⚙️' },
+  { id: 'profile',           label: 'Profile Settings',  icon: '👤' },
+  { id: 'users_roles',       label: 'Users & Roles',     icon: '👥' },
+  { id: 'permission_sets',   label: 'Permission Sets',   icon: '🔑' },
+  { id: 'sharing_overrides', label: 'Sharing Overrides', icon: '🔒' },
+  { id: 'tab_settings',      label: 'Tab Settings',      icon: '📑' },
+  { id: 'app_manager',       label: 'App Manager',       icon: '📱' },
+  { id: 'system_settings',   label: 'System Settings',   icon: '⚙️' },
 ];
 
 export default function HomeTab({ user, userProfile, tenant }: HomeTabProps) {
-  const [selectedHomeSection, setSelectedHomeSection] = useState<'profile' | 'users_roles' | 'permission_sets' | 'tab_settings' | 'app_manager' | 'system_settings'>('profile');
+  const [selectedHomeSection, setSelectedHomeSection] = useState<'profile' | 'users_roles' | 'permission_sets' | 'sharing_overrides' | 'tab_settings' | 'app_manager' | 'system_settings'>('profile');
   
   // Profile management state
   const [profiles, setProfiles] = useState<Array<{ id: string; name: string; description: string }>>([]);
@@ -957,6 +959,11 @@ export default function HomeTab({ user, userProfile, tenant }: HomeTabProps) {
               {/* Permission Sets Section */}
               {selectedHomeSection === 'permission_sets' && (
                 <PermissionSets tenant={tenant} />
+              )}
+
+              {/* Sharing Overrides Section */}
+              {selectedHomeSection === 'sharing_overrides' && (
+                <SharingOverrides tenant={tenant} />
               )}
 
               {/* Tab Settings Section */}
