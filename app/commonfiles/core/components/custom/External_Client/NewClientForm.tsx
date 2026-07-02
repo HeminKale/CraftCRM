@@ -45,9 +45,12 @@ interface ParsedEntry {
 // Parse a single Excel File into DB column map
 async function parseExcel(f: File): Promise<Record<string, string>> {
   const buffer = await f.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array' });
+  // cellText: true  → SheetJS returns the formatted display string (e.g. "9001:2015")
+  // cellDates: true → date cells come back as Date objects, not serial numbers
+  // raw: false      → numeric cells that look like text are returned as strings
+  const workbook = XLSX.read(buffer, { type: 'array', cellText: true, cellDates: true });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
 
   const fields: Record<string, string> = {};
   for (const row of rows) {
