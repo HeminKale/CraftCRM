@@ -65,7 +65,7 @@ d2f949f Language added
 caa5105 Merge pull request #2 from HeminKale/Version_1
 ```
 
-npm run build
+### 4.1. npm run build
 
 ## Post-Deployment Steps
 

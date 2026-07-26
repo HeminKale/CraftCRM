@@ -7,11 +7,84 @@ import { useSupabase } from '../../../providers/SupabaseProvider';
 import toast from 'react-hot-toast';
 
 const EXTERNAL_CLIENT_OBJECT_ID = '62803c4d-9430-4d19-a487-4370d52e062a';
+const BUCKET = 'tenant-uploads';
+
+// Every recognized Excel label, and where its value goes. `kind: 'date'`
+// values are parsed/validated as calendar dates; `kind: 'text'` values are
+// copied through as-is (trimmed), covering both genuinely free-text fields
+// (names, standards, mandays) and the two fields that read like dates but
+// are deliberately TEXT columns per S3/S4's design (stage1_audit_date__a /
+// stage2_audit_date__a — manual, no status implication).
+//
+// extColumn / summaryColumn are independently optional — a label with only
+// one of the two simply doesn't write to the other object. Several vertical
+// dates have no reasonable client_summary__a target at all: that object's
+// date columns are coarser (one stage1_date__a / stage2_date__a covering
+// the whole stage, no per-checkpoint granularity), so per §5a of
+// summary-excel-import-analysis.md, "tech review N date" (Stage N fully
+// complete) is what's mirrored into stage{1,2}_date__a — not the mid-cycle
+// "audit date"/"plan accept date"/"RCA accept date" checkpoints, which have
+// nowhere coarse enough to land on Summary.
+interface FieldMapping {
+  extColumn?: string;
+  summaryColumn?: string;
+  kind: 'date' | 'text';
+}
+
+const FIELD_MAPPINGS: Record<string, FieldMapping> = {
+  // Section B — per-checkpoint workflow dates (external_clients__a is the
+  // detailed record; client_summary__a gets the ones that map cleanly onto
+  // its coarser columns)
+  'application':                     { extColumn: 'Date__a',                          summaryColumn: 'application_date__a',      kind: 'date' },
+  'application review':              { extColumn: 'Application_Accpeted_Date__a',                                                 kind: 'date' },
+  'quotation':                       { extColumn: 'Quotation_Received_Date__a',        summaryColumn: 'quotation_date__a',        kind: 'date' },
+  'client agreement':                { extColumn: 'Client_Agreement_Signed_Date__a',   summaryColumn: 'client_agreement_date__a', kind: 'date' },
+  'stage 1 plan sent date':          { extColumn: 'Stage_one_plan_Sent_Date__a',       summaryColumn: 'stage1_plan_sent_date__a', kind: 'date' },
+  'stage 1 plan accept date':        { extColumn: 'stage1_plan_accepted_date__a',                                                 kind: 'date' },
+  'stage 1 audit date':              { extColumn: 'stage1_audit_date__a',                                                         kind: 'text' },
+  'stage 1 ncr rca acceptance date': { extColumn: 'stage1_auditor_accepted_date__a',                                              kind: 'date' },
+  'tech review 1 date':              { extColumn: 'stage1_tech_final_accepted_date__a', summaryColumn: 'stage1_date__a',          kind: 'date' },
+  'stage 2 plan sent date':          { extColumn: 'stage2_plan_sent_date__a',          summaryColumn: 'stage2_plan_sent_date__a', kind: 'date' },
+  'stage 2 plan accept date':        { extColumn: 'stage2_plan_accepted_date__a',                                                 kind: 'date' },
+  'stage 2 audit date':              { extColumn: 'stage2_audit_date__a',                                                         kind: 'text' },
+  'stage 2 audit rca accept date':   { extColumn: 'stage2_auditor_accepted_date__a',                                              kind: 'date' },
+  'stage 2 ncr closure date':        { extColumn: 'stage2_evidences_accepted_date__a', summaryColumn: 'ncr_closure_date__a',      kind: 'date' },
+  'tech review 2 date':              { extColumn: 'stage2_tech_findings_date__a',      summaryColumn: 'stage2_date__a',           kind: 'date' },
+  'cdc date':                        { extColumn: 'cdc_date__a',                                                                  kind: 'date' },
+  'registration date':               { extColumn: 'registration_date__a',              summaryColumn: 'registration_date__a',     kind: 'date' },
+
+  // Section A — company/audit-planning metadata (migration 241)
+  'company name':                    { extColumn: 'Company_name__a',           summaryColumn: 'company_name__a',      kind: 'text' },
+  'standard':                        { extColumn: 'ISOStandard__a',            summaryColumn: 'iso_standards__a',     kind: 'text' },
+  'certificate no':                  { extColumn: 'certificate_no__a',         summaryColumn: 'certificate_no__a',    kind: 'text' },
+  'country':                         { extColumn: 'country__a',                summaryColumn: 'country__a',           kind: 'text' },
+  'iaf code':                        { extColumn: 'iaf_code__a',               summaryColumn: 'iaf_code__a',          kind: 'text' },
+  'address':                         { extColumn: 'Adddress__a',               summaryColumn: 'address__a',           kind: 'text' },
+  'scope':                           { extColumn: 'scope__a',                  summaryColumn: 'scope__a',             kind: 'text' },
+  'no of empl':                      { extColumn: 'totalNumberOfEmployees__a', summaryColumn: 'no_of_employees__a',   kind: 'text' },
+  'total mandays':                   { extColumn: 'total_mandays__a',          summaryColumn: 'total_mandays__a',     kind: 'text' },
+  'stg 1 manday':                    { extColumn: 'stage1_manday__a',          summaryColumn: 'stage1_manday__a',     kind: 'text' },
+  'stg 2 manday':                    { extColumn: 'stage2_manday__a',          summaryColumn: 'stage2_manday__a',     kind: 'text' },
+  'auditor stg 1':                   { extColumn: 'stage1_auditor__a',         summaryColumn: 'stage1_auditor__a',    kind: 'text' },
+  'auditor stg 2':                   { extColumn: 'stage2_auditor__a',         summaryColumn: 'stage2_auditor__a',    kind: 'text' },
+  // Excel has one "Tech Reviewer" column; maps to Stage 1 only (confirmed) —
+  // stage2_tech_reviewer exists on both objects for parity but has no Excel source yet.
+  'tech reviewer':                   { extColumn: 'stage1_tech_reviewer__a',   summaryColumn: 'stage1_tech_reviewer__a', kind: 'text' },
+  'director name':                   { extColumn: 'director_name__a',          summaryColumn: 'director_name__a',     kind: 'text' },
+  'auditor team':                    { extColumn: 'auditor_team__a',           summaryColumn: 'auditor_team__a',      kind: 'text' },
+  'application reviewer name':       { extColumn: 'application_reviewer__a',   summaryColumn: 'application_reviewer__a', kind: 'text' },
+  'lead auditor':                    { extColumn: 'lead_auditor__a',           summaryColumn: 'lead_auditor__a',      kind: 'text' },
+  'food category':                   { extColumn: 'food_category__a',          summaryColumn: 'food_category__a',     kind: 'text' },
+  'soa date':                        { extColumn: 'soa_date__a',               summaryColumn: 'soa_date__a',          kind: 'text' },
+  // 'type', 'Surveillance 1 mandays', 'Recert mandays' — deferred, not mapped (see analysis doc §5a)
+};
 
 // Mirrors ClientWorkflowBar.tsx's STAGES order — keep in sync if that array
-// changes. Client_Registered is deliberately absent: it's handled via the
-// dedicated set_stage2_registration_date RPC below, which sets status__a
-// itself, so it never needs a place in this forward-only comparison.
+// changes. registration_date__a is last since Client_Registered is the
+// terminal stage; no special-casing needed beyond that, the trigger added
+// in migration 241 (tenant.sync_status_on_registration_date) is what
+// actually enforces this server-side regardless of what status this preview
+// computes — this list only drives what the preview *displays*.
 const STAGE_PROGRESSION: { column: string; status: string }[] = [
   { column: 'Date__a',                            status: 'Application_Sent' },
   { column: 'Application_Accpeted_Date__a',       status: 'Application_Accepted' },
@@ -27,40 +100,8 @@ const STAGE_PROGRESSION: { column: string; status: string }[] = [
   { column: 'stage2_evidences_accepted_date__a',  status: 'Stage2_Evidences_Accepted' },
   { column: 'stage2_tech_findings_date__a',       status: 'Stage2_Tech_Findings_Given' },
   { column: 'cdc_date__a',                        status: 'CDC_Approved' },
+  { column: 'registration_date__a',               status: 'Client_Registered' },
 ];
-
-// Excel label (col A, case-insensitive) -> external_clients__a column.
-// stage1_audit_date__a / stage2_audit_date__a are free-text manual fields
-// with no status implication (per S3/S4 design notes) — backfilled but
-// absent from STAGE_PROGRESSION above.
-const LABEL_TO_COLUMN: Record<string, string> = {
-  'application':                     'Date__a',
-  'application review':              'Application_Accpeted_Date__a',
-  'quotation':                       'Quotation_Received_Date__a',
-  'client agreement':                'Client_Agreement_Signed_Date__a',
-  'stage 1 plan sent date':          'Stage_one_plan_Sent_Date__a',
-  'stage 1 plan accept date':        'stage1_plan_accepted_date__a',
-  'stage 1 audit date':              'stage1_audit_date__a',
-  'stage 1 ncr rca acceptance date': 'stage1_auditor_accepted_date__a',
-  'tech review 1 date':              'stage1_tech_final_accepted_date__a',
-  'stage 2 plan sent date':          'stage2_plan_sent_date__a',
-  'stage 2 plan accept date':        'stage2_plan_accepted_date__a',
-  'stage 2 audit date':              'stage2_audit_date__a',
-  'stage 2 audit rca accept date':   'stage2_auditor_accepted_date__a',
-  'stage 2 ncr closure date':        'stage2_evidences_accepted_date__a',
-  'tech review 2 date':              'stage2_tech_findings_date__a',
-  'cdc date':                        'cdc_date__a',
-  'registration date':               'stage2_registration_date__a',
-};
-
-const REGISTRATION_COLUMN = 'stage2_registration_date__a';
-
-interface ParsedRow {
-  label: string;
-  column: string;
-  raw: string;
-  parsed: string | null; // ISO date (YYYY-MM-DD), or null if unparseable
-}
 
 // Builds a plain calendar-date string from a Date object's LOCAL fields.
 // Deliberately never touches toISOString()/UTC conversion — these are
@@ -92,6 +133,13 @@ function formatIso(iso: string): string {
   return `${String(d).padStart(2, '0')} ${MONTHS[m - 1]} ${y}`;
 }
 
+interface ParsedRow {
+  label: string;
+  mapping: FieldMapping;
+  raw: string;
+  value: string | null; // ISO date (kind 'date') or trimmed text (kind 'text'); null = blank/unparseable, skipped
+}
+
 interface Props {
   extClientId: string;
   isCrmOrAdmin: boolean;
@@ -104,6 +152,7 @@ export default function StageDateImport({ extClientId, isCrmOrAdmin, onImported 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [rows, setRows]               = useState<ParsedRow[] | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [currentStatus, setCurrentStatus] = useState<string | null>(null);
   const [impliedStatus, setImpliedStatus] = useState<string | null>(null);
   const [parsing, setParsing]         = useState(false);
@@ -113,6 +162,7 @@ export default function StageDateImport({ extClientId, isCrmOrAdmin, onImported 
 
   const reset = () => {
     setRows(null);
+    setPendingFile(null);
     setCurrentStatus(null);
     setImpliedStatus(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -132,19 +182,17 @@ export default function StageDateImport({ extClientId, isCrmOrAdmin, onImported 
       for (const r of sheetRows) {
         const label = String(r[0] ?? '').trim();
         if (!label) continue;
-        const column = LABEL_TO_COLUMN[label.toLowerCase()];
-        if (!column) continue; // unmapped label — silently ignored, matches NewClientForm's convention
+        const mapping = FIELD_MAPPINGS[label.toLowerCase()];
+        if (!mapping) continue; // unmapped label — silently ignored, matches NewClientForm's convention
         const rawValue = r[1];
-        parsed.push({
-          label,
-          column,
-          raw: String(rawValue ?? '').trim(),
-          parsed: parseFlexibleDate(rawValue),
-        });
+        const value = mapping.kind === 'date'
+          ? parseFlexibleDate(rawValue)
+          : (String(rawValue ?? '').trim() || null);
+        parsed.push({ label, mapping, raw: String(rawValue ?? '').trim(), value });
       }
 
       if (parsed.length === 0) {
-        toast('No recognized date fields found in this file.', { icon: '⚠️' });
+        toast('No recognized fields found in this file.', { icon: '⚠️' });
         reset();
         return;
       }
@@ -162,19 +210,16 @@ export default function StageDateImport({ extClientId, isCrmOrAdmin, onImported 
       const status = current?.status__a ?? null;
       setCurrentStatus(status);
 
-      const valid = parsed.filter(r => r.parsed);
-      const registrationPresent = valid.some(r => r.column === REGISTRATION_COLUMN);
-      if (registrationPresent) {
-        setImpliedStatus('Client_Registered');
-      } else {
-        const currentIdx = STAGE_PROGRESSION.findIndex(s => s.status === status);
-        const presentColumns = new Set(valid.map(r => r.column));
-        let impliedIdx = -1;
-        STAGE_PROGRESSION.forEach((s, i) => { if (presentColumns.has(s.column)) impliedIdx = i; });
-        setImpliedStatus(impliedIdx > currentIdx ? STAGE_PROGRESSION[impliedIdx].status : null);
-      }
+      const presentColumns = new Set(
+        parsed.filter(r => r.value && r.mapping.kind === 'date' && r.mapping.extColumn).map(r => r.mapping.extColumn)
+      );
+      const currentIdx = STAGE_PROGRESSION.findIndex(s => s.status === status);
+      let impliedIdx = -1;
+      STAGE_PROGRESSION.forEach((s, i) => { if (presentColumns.has(s.column)) impliedIdx = i; });
+      setImpliedStatus(impliedIdx > currentIdx ? STAGE_PROGRESSION[impliedIdx].status : null);
 
       setRows(parsed);
+      setPendingFile(file);
     } catch (err: any) {
       toast.error('Could not read Excel file: ' + err.message);
       reset();
@@ -187,35 +232,60 @@ export default function StageDateImport({ extClientId, isCrmOrAdmin, onImported 
     if (!rows || !tenant?.id) return;
     setApplying(true);
     try {
-      const valid = rows.filter(r => r.parsed);
-      const registrationRow = valid.find(r => r.column === REGISTRATION_COLUMN);
-      const genericRows = valid.filter(r => r.column !== REGISTRATION_COLUMN);
+      const valid = rows.filter(r => r.value !== null);
 
-      if (genericRows.length > 0) {
-        const updateData: Record<string, string> = {};
-        genericRows.forEach(r => { updateData[r.column] = r.parsed!; });
-        if (impliedStatus) updateData['status__a'] = impliedStatus;
+      const extUpdateData: Record<string, string> = {};
+      valid.forEach(r => { if (r.mapping.extColumn) extUpdateData[r.mapping.extColumn] = r.value!; });
+      if (impliedStatus) extUpdateData['status__a'] = impliedStatus;
 
+      if (Object.keys(extUpdateData).length > 0) {
         const { error: updateErr } = await supabase.rpc('update_tenant_record', {
           p_table_name: 'external_clients__a',
           p_record_id: extClientId,
           p_tenant_id: tenant.id,
-          p_update_data: updateData,
+          p_update_data: extUpdateData,
         });
         if (updateErr) throw updateErr;
       }
 
-      if (registrationRow) {
-        const { data, error } = await supabase.rpc('set_stage2_registration_date', {
-          p_record_id: extClientId,
-          p_date: registrationRow.parsed,
+      const summaryUpdateData: Record<string, string> = {};
+      valid.forEach(r => { if (r.mapping.summaryColumn) summaryUpdateData[r.mapping.summaryColumn] = r.value!; });
+
+      if (Object.keys(summaryUpdateData).length > 0) {
+        const { data: summaryRes, error: summaryErr } = await supabase.rpc('upsert_client_summary', {
+          p_external_client_id: extClientId,
+          p_data: summaryUpdateData,
         });
-        if (error) throw error;
-        const result = Array.isArray(data) ? data[0] : data;
-        if (!result?.success) throw new Error(result?.message || 'Failed to set registration date');
+        if (summaryErr) throw summaryErr;
+        const summaryResult = Array.isArray(summaryRes) ? summaryRes[0] : summaryRes;
+        if (!summaryResult?.success) throw new Error(summaryResult?.message || 'Failed to update Summary');
       }
 
-      toast.success(`Imported ${valid.length} date${valid.length === 1 ? '' : 's'}`);
+      // Store the sheet itself as an attachment, same mechanism the old
+      // "Upload Audit Pack" button used (append_audit_pack_entry / audit_pack__a).
+      if (pendingFile) {
+        const storagePath = `tenants/${tenant.id}/audit_packs/${extClientId}/${Date.now()}_${pendingFile.name}`;
+        const { error: upErr } = await supabase.storage.from(BUCKET).upload(storagePath, pendingFile, { upsert: true });
+        if (upErr) throw upErr;
+
+        const entry = {
+          name:        pendingFile.name,
+          path:        storagePath,
+          bucket:      BUCKET,
+          size:        pendingFile.size,
+          mime:        pendingFile.type || null,
+          uploaded_at: new Date().toISOString(),
+        };
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('append_audit_pack_entry', {
+          p_external_client_id: extClientId,
+          p_entry:              entry,
+        });
+        if (rpcErr) throw rpcErr;
+        const result = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
+        if (!result?.success) throw new Error(result?.message || 'Failed to save the summary sheet as an attachment');
+      }
+
+      toast.success(`Imported ${valid.length} field${valid.length === 1 ? '' : 's'}`);
       reset();
       onImported?.();
     } catch (err: any) {
@@ -239,7 +309,7 @@ export default function StageDateImport({ extClientId, isCrmOrAdmin, onImported 
           ) : (
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
           )}
-          Import Stage Dates from Excel
+          Import Summary
         </button>
       )}
 
@@ -253,10 +323,12 @@ export default function StageDateImport({ extClientId, isCrmOrAdmin, onImported 
             <tbody className="divide-y divide-gray-100">
               {rows.map((r, i) => (
                 <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td className="px-4 py-2 text-xs font-medium text-gray-500 whitespace-nowrap">{r.label}</td>
+                  <td className="px-4 py-2 text-xs font-medium text-gray-500 whitespace-nowrap align-top">{r.label}</td>
                   <td className="px-4 py-2 text-sm">
-                    {r.parsed ? (
-                      <span className="text-gray-900">{formatIso(r.parsed)}</span>
+                    {r.value ? (
+                      <span className="text-gray-900 whitespace-pre-wrap">
+                        {r.mapping.kind === 'date' ? formatIso(r.value) : r.value}
+                      </span>
                     ) : (
                       <span className="text-red-600" title={`Raw value: "${r.raw}"`}>
                         ⚠️ Could not parse ("{r.raw || 'blank'}") — skipped
@@ -272,13 +344,18 @@ export default function StageDateImport({ extClientId, isCrmOrAdmin, onImported 
               Status will advance: <span className="font-mono">{currentStatus ?? '(none)'}</span> → <span className="font-mono font-semibold">{impliedStatus}</span>
             </div>
           )}
+          {pendingFile && (
+            <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-600">
+              📎 This sheet will also be saved as an attachment: {pendingFile.name}
+            </div>
+          )}
           <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex gap-2">
             <button
               onClick={apply}
-              disabled={applying || rows.every(r => !r.parsed)}
+              disabled={applying || rows.every(r => r.value === null)}
               className="px-4 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50"
             >
-              {applying ? 'Applying…' : `Apply ${rows.filter(r => r.parsed).length} date${rows.filter(r => r.parsed).length === 1 ? '' : 's'}`}
+              {applying ? 'Applying…' : `Apply ${rows.filter(r => r.value !== null).length} field${rows.filter(r => r.value !== null).length === 1 ? '' : 's'}`}
             </button>
             <button
               onClick={reset}

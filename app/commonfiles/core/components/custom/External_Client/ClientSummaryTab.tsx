@@ -39,10 +39,23 @@ const ROWS: { key: string; label: string; type: 'text' | 'date'; readonly: boole
   { key: 'stage2_auditor__a',          label: 'Stage 2 Auditor Name',      type: 'text', readonly: false },
   { key: 'stage1_tech_reviewer__a',    label: 'Stage 1 Tech Reviewer',     type: 'text', readonly: false },
   { key: 'stage2_tech_reviewer__a',    label: 'Stage 2 Tech Reviewer',     type: 'text', readonly: false },
+  // Added in migration 241 — summary-excel-import-analysis.md §5a/§6a
+  { key: 'registration_date__a',       label: 'Registration Date',         type: 'date', readonly: false },
+  { key: 'certificate_no__a',          label: 'Certificate No',            type: 'text', readonly: false },
+  { key: 'country__a',                 label: 'Country',                   type: 'text', readonly: false },
+  { key: 'no_of_employees__a',         label: 'Total Number of Employees', type: 'text', readonly: false },
+  { key: 'iaf_code__a',                label: 'IAF Code',                  type: 'text', readonly: false },
+  { key: 'total_mandays__a',           label: 'Total Mandays',             type: 'text', readonly: false },
+  { key: 'stage1_manday__a',           label: 'Stage 1 Manday',            type: 'text', readonly: false },
+  { key: 'stage2_manday__a',           label: 'Stage 2 Manday',            type: 'text', readonly: false },
+  { key: 'director_name__a',           label: 'Director Name',             type: 'text', readonly: false },
+  { key: 'auditor_team__a',            label: 'Auditor Team',              type: 'text', readonly: false },
+  { key: 'lead_auditor__a',            label: 'Lead Auditor',              type: 'text', readonly: false },
+  { key: 'food_category__a',           label: 'Food Category',             type: 'text', readonly: false },
+  { key: 'soa_date__a',                label: 'SOA Date',                  type: 'text', readonly: false },
 ];
 
 type SummaryRow = Record<string, any>;
-const BUCKET = 'tenant-uploads';
 
 const fmtDate = (v: string | null) =>
   v ? new Date(v).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -58,10 +71,8 @@ function SummaryDetail({ extClientId, onBack }: { extClientId: string; onBack?: 
   const [draft, setDraft]     = useState<SummaryRow>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [auditFiles, setAuditFiles] = useState<any[]>([]);
   const [isCrmOrAdmin, setIsCrmOrAdmin] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { load(); }, [extClientId]);
 
@@ -131,44 +142,6 @@ function SummaryDetail({ extClientId, onBack }: { extClientId: string; onBack?: 
     }
   };
 
-  const handleAuditUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !tenant?.id) return;
-    setUploading(true);
-    try {
-      // 1. Upload file to Storage
-      const storagePath = `tenants/${tenant.id}/audit_packs/${extClientId}/${Date.now()}_${file.name}`;
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(storagePath, file, { upsert: true });
-      if (upErr) throw upErr;
-
-      // 2. Persist the entry via RPC (avoids direct tenant-schema table access)
-      const entry = {
-        name:        file.name,
-        path:        storagePath,
-        bucket:      BUCKET,
-        size:        file.size,
-        mime:        file.type || null,
-        uploaded_at: new Date().toISOString(),
-      };
-      const { data: rpcRes, error: rpcErr } = await supabase.rpc('append_audit_pack_entry', {
-        p_external_client_id: extClientId,
-        p_entry:              entry,
-      });
-      if (rpcErr) throw rpcErr;
-      const result = Array.isArray(rpcRes) ? rpcRes[0] : rpcRes;
-      if (!result?.success) throw new Error(result?.message || 'Failed to save audit pack entry');
-
-      // 3. Update local state
-      setAuditFiles(prev => [...prev, entry]);
-      toast.success('Audit pack uploaded');
-    } catch (err: any) {
-      toast.error('Upload failed: ' + err.message);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
   const downloadAudit = async (entry: any) => {
     try {
       const { data: sd, error } = await supabase.storage.from(entry.bucket).createSignedUrl(entry.path, 300);
@@ -207,14 +180,6 @@ function SummaryDetail({ extClientId, onBack }: { extClientId: string; onBack?: 
           </h2>
         </div>
         <div className="flex items-center gap-2">
-          <input ref={fileInputRef} type="file" onChange={handleAuditUpload} className="hidden" />
-          <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50">
-            {uploading
-              ? <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-              : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>}
-            Upload Audit Pack
-          </button>
           {!editing ? (
             <button onClick={() => { setDraft({ ...data }); setEditing(true); }}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
