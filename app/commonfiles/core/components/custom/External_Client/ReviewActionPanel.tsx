@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import toast from 'react-hot-toast';
 import SignaturePad, { SignaturePadHandle } from './SignaturePad';
+import { useSupabase } from '../../../providers/SupabaseProvider';
 
 interface Props {
   recordId: string;
@@ -27,6 +28,7 @@ export default function ReviewActionPanel({
   onActionComplete,
 }: Props) {
   const supabase = createClientComponentClient();
+  const { tenant } = useSupabase();
   const [mode, setMode] = useState<PanelMode>('idle');
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -88,17 +90,29 @@ export default function ReviewActionPanel({
 
     setProcessing(true);
     try {
-      // Resolve bucket + path from the stored agreement file metadata
+      // Resolve bucket + path + original filename from the stored agreement file metadata
       const rawAgreement = recordData['clientAgreement__c__a'];
       let storageBucket = 'tenant-uploads';
       let storagePath: string | null = null;
+      let originalName: string | null = null;
+      let originalAttachmentId: string | null = null;
       if (rawAgreement) {
         try {
           const parsed = typeof rawAgreement === 'string' ? JSON.parse(rawAgreement) : rawAgreement;
-          const entry  = Array.isArray(parsed) ? parsed[0] : parsed;
+          // clientAgreement__c is a single 'file' field (migration 240) — parsed
+          // is normally a plain object. The Array.isArray fallback only covers
+          // records that predate 240's cleanup in case it hasn't been applied yet.
+          const entry  = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed;
           storageBucket = entry?.bucket ?? 'tenant-uploads';
           storagePath   = entry?.path   ?? null;
+          originalName  = entry?.name   ?? null;
+          originalAttachmentId = entry?.id ?? null;
         } catch { /* ignore */ }
+      }
+
+      if (!storagePath) {
+        toast.error('Agreement file not linked — cannot sign.');
+        return;
       }
 
       // Resolve display name
@@ -108,28 +122,86 @@ export default function ReviewActionPanel({
         `${user?.user_metadata?.first_name ?? ''} ${user?.user_metadata?.last_name ?? ''}`.trim() ||
         user?.email || 'Client';
 
-      if (storagePath) {
-        const fd = new FormData();
-        fd.append('storage_bucket', storageBucket);
-        fd.append('storage_path', storagePath);
-        fd.append('signed_by', signedBy);
-        fd.append('sign_method', signMethod);
+      const fd = new FormData();
+      fd.append('storage_bucket', storageBucket);
+      fd.append('storage_path', storagePath);
+      fd.append('signed_by', signedBy);
+      fd.append('sign_method', signMethod);
 
-        if (signMethod === 'draw') {
-          const blob = await sigPadRef.current!.getBlob();
-          fd.append('signature', new File([blob!], 'signature.png', { type: 'image/png' }));
-        } else {
-          fd.append('uploaded_image', uploadedImage!);
-        }
-
-        const res = await fetch('/api/sign-agreement', { method: 'POST', body: fd });
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({ error: 'unknown' }));
-          console.error('[sign-agreement]', res.status, errBody);
-          toast(`Could not embed signature: ${errBody.error || res.status}`, { icon: '⚠️' });
-        }
+      if (signMethod === 'draw') {
+        const blob = await sigPadRef.current!.getBlob();
+        fd.append('signature', new File([blob!], 'signature.png', { type: 'image/png' }));
       } else {
-        toast('Agreement file not linked — signature not embedded.', { icon: '⚠️' });
+        fd.append('uploaded_image', uploadedImage!);
+      }
+
+      const res = await fetch('/api/sign-agreement', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({ error: 'unknown' }));
+        console.error('[sign-agreement]', res.status, errBody);
+        toast.error(`Could not embed signature: ${errBody.error || res.status}`);
+        return;
+      }
+      const pdfBlob = await res.blob();
+
+      // Attach the signed PDF through the same three-step flow every other file
+      // field uses, so it actually shows up as the record's attachment instead
+      // of an orphaned object in Storage nothing references.
+      if (!tenant?.id) { toast.error('Tenant not loaded — cannot attach signed agreement.'); return; }
+
+      const { data: fieldsData, error: fieldsError } = await supabase.rpc('get_tenant_fields', {
+        p_object_id: objectId,
+        p_tenant_id: tenant.id,
+      });
+      const agreementField = fieldsData?.find((f: any) => f.name === 'clientAgreement__c');
+      if (fieldsError || !agreementField?.id) {
+        toast.error('Could not resolve the agreement field — signed copy not attached.');
+        return;
+      }
+
+      const pdfFilename = (originalName || 'Client_Agreement').replace(/\.(xlsx?|xls)$/i, '') + '_Signed.pdf';
+      const pdfFile = new File([pdfBlob], pdfFilename, { type: 'application/pdf' });
+
+      const { data: startData, error: startError } = await supabase.rpc('start_file_upload', {
+        p_object_id: objectId,
+        p_record_id: recordId,
+        p_field_id:  agreementField.id,
+        p_filename:  pdfFile.name,
+        p_mime_type: 'application/pdf',
+        p_byte_size: pdfFile.size,
+      });
+      if (startError || !startData?.[0]?.success) {
+        toast.error(`Could not start signed-copy upload: ${startError?.message || startData?.[0]?.message}`);
+        return;
+      }
+      const { attachment_id, bucket: uploadBucket, storage_path: uploadPath } = startData[0];
+
+      const { error: storageError } = await supabase.storage
+        .from(uploadBucket || 'tenant-uploads')
+        .upload(uploadPath, pdfFile, { upsert: true });
+      if (storageError) {
+        toast.error(`Signed copy upload failed: ${storageError.message}`);
+        return;
+      }
+
+      const { data: finalData, error: finalError } = await supabase.rpc('finalize_file_upload', {
+        p_attachment_id:   attachment_id,
+        p_final_byte_size: pdfFile.size,
+        p_final_mime_type: 'application/pdf',
+      });
+      if (finalError || !finalData?.[0]?.success) {
+        toast.error('Could not finalize signed-copy attachment.');
+        return;
+      }
+
+      // Best-effort cleanup of the file just replaced. finalize_file_upload only
+      // overwrites the column pointer — it doesn't delete the previous
+      // tenant.attachments row, which would otherwise linger as a live row and
+      // still show up alongside the signed PDF in the field's file list.
+      if (originalAttachmentId && originalAttachmentId !== attachment_id) {
+        try {
+          await supabase.rpc('delete_file', { p_attachment_id: originalAttachmentId });
+        } catch { /* best-effort cleanup, don't block signing on it */ }
       }
 
       // Advance status + stamp date
