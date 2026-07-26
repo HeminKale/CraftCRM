@@ -24,6 +24,7 @@ interface FileUploadFieldProps {
   disabled?: boolean;
   readOnly?: boolean;
   companyName?: string;       // prefixed onto downloaded filename
+  onUploadComplete?: () => void; // notify parent to re-fetch recordData (e.g. status__a auto-advance)
 }
 
 const BUCKET = 'tenant-uploads';
@@ -54,6 +55,7 @@ export default function FileUploadField({
   disabled = false,
   readOnly = false,
   companyName,
+  onUploadComplete,
 }: FileUploadFieldProps) {
   const supabase = createClientComponentClient();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -149,6 +151,7 @@ export default function FileUploadField({
     if (successCount > 0) {
       toast.success(`${successCount} file${successCount > 1 ? 's' : ''} uploaded`);
       await loadAttachments();
+      onUploadComplete?.();
     }
 
     setUploading(false);
@@ -172,6 +175,7 @@ export default function FileUploadField({
 
       toast.success('File removed');
       setAttachments(prev => prev.filter(a => a.id !== attachment.id));
+      onUploadComplete?.();
     } finally {
       setDeletingId(null);
     }

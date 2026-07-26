@@ -10,6 +10,7 @@ import { draftToClientService } from '../../services/DraftToClientService';
 import FileUploadField from './FileUploadField';
 import ClientWorkflowBar from '../custom/External_Client/ClientWorkflowBar';
 import ReviewActionPanel from '../custom/External_Client/ReviewActionPanel';
+import StageAuditActionPanel from '../custom/External_Client/StageAuditActionPanel';
 import RenewalWorkflowBar from '../custom/Renewal_Client/RenewalWorkflowBar';
 import RenewalActionPanel from '../custom/Renewal_Client/RenewalActionPanel';
 import toast from 'react-hot-toast';
@@ -787,7 +788,7 @@ export default function RecordDetailView({
         for (const [earlier, later, msg] of stages) {
           const dEarlier = d(earlier);
           const dLater   = d(later);
-          if (dEarlier && dLater && dLater <= dEarlier) {
+          if (dEarlier && dLater && dLater < dEarlier) {
             toast.error(msg);
             setSaving(false);
             return;
@@ -813,7 +814,7 @@ export default function RecordDetailView({
         for (const [earlier, later, msg] of stages) {
           const dEarlier = d(earlier);
           const dLater   = d(later);
-          if (dEarlier && dLater && dLater <= dEarlier) {
+          if (dEarlier && dLater && dLater < dEarlier) {
             toast.error(msg);
             setSaving(false);
             return;
@@ -1078,6 +1079,7 @@ export default function RecordDetailView({
           recordId={recordId}
           multiple={field.type === 'files'}
           companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
+          onUploadComplete={() => setRefreshKey(k => k + 1)}
         />
       );
     }
@@ -1340,6 +1342,7 @@ export default function RecordDetailView({
                                         multiple={field.type === 'files'}
                                         readOnly={!isEditing || !can('edit', 'field', field.id)}
                                         companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
+                                        onUploadComplete={() => setRefreshKey(k => k + 1)}
                                       />
                                     ) : isEditing && can('edit', 'field', field.id) ? (
                                       // Edit mode — only if user can edit this specific field
@@ -1682,6 +1685,15 @@ export default function RecordDetailView({
             }
           />
           <ReviewActionPanel
+            recordId={recordId}
+            recordData={recordData}
+            currentUserRole={userProfile?.role || 'user'}
+            currentCustomRole={customRoleName}
+            currentUserId={user?.id || ''}
+            objectId={objectId}
+            onActionComplete={() => setRefreshKey(k => k + 1)}
+          />
+          <StageAuditActionPanel
             recordId={recordId}
             recordData={recordData}
             currentUserRole={userProfile?.role || 'user'}

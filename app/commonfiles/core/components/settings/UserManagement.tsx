@@ -86,6 +86,7 @@ export default function UserManagement({ tenant }: HomeTabProps) {
   });
   const [processing, setProcessing] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [inviteEmailSent, setInviteEmailSent] = useState(false);
 
   // Roles modal
   const [showRolesModal, setShowRolesModal] = useState(false);
@@ -233,6 +234,7 @@ export default function UserManagement({ tenant }: HomeTabProps) {
       if (error) { toast.error(error.message || 'Failed to invite user'); return; }
 
       if (data?.[0]?.success) {
+        let emailSent = false;
         try {
           // Fetch the token so admin can copy and share the invite link
           const { data: tokenData } = await supabase
@@ -249,10 +251,33 @@ export default function UserManagement({ tenant }: HomeTabProps) {
           if (tokenData?.invitation_token) {
             const link = `${window.location.origin}/invite?token=${tokenData.invitation_token}`;
             setInviteLink(link);
+
+            try {
+              const res = await fetch('/api/auth/send-invitation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  email: inviteForm.email.toLowerCase().trim(),
+                  token: tokenData.invitation_token,
+                  tenantName: tenant.name,
+                  invitedBy: userProfile?.email || '',
+                  role: inviteForm.role,
+                }),
+              });
+              const sendResult = await res.json();
+              emailSent = !!sendResult.success;
+            } catch {
+              emailSent = false;
+            }
           }
         } catch {
           // non-critical
         }
+
+        setInviteEmailSent(emailSent);
+        toast[emailSent ? 'success' : 'error'](
+          emailSent ? 'Invitation email sent' : 'Invitation created, but the email could not be sent — share the link below instead'
+        );
 
         loadInvitations();
         // Keep modal open to show the link — user closes it manually
@@ -353,7 +378,33 @@ export default function UserManagement({ tenant }: HomeTabProps) {
       });
       if (error) { toast.error(error.message || 'Failed to resend invitation'); return; }
       if (data?.[0]?.success) {
-        toast.success('Invitation resent successfully');
+        const newToken = data[0].new_token;
+        const invitation = invitations.find(inv => inv.id === invitationId);
+
+        if (newToken && invitation) {
+          try {
+            const res = await fetch('/api/auth/send-invitation', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: invitation.email,
+                token: newToken,
+                tenantName: tenant.name,
+                invitedBy: userProfile?.email || '',
+                role: invitation.role,
+              }),
+            });
+            const sendResult = await res.json();
+            toast[sendResult.success ? 'success' : 'error'](
+              sendResult.success ? 'Invitation resent successfully' : 'Invitation renewed, but the email could not be sent'
+            );
+          } catch {
+            toast.error('Invitation renewed, but the email could not be sent');
+          }
+        } else {
+          toast.success('Invitation resent successfully');
+        }
+
         loadInvitations();
       } else {
         toast.error(data?.[0]?.message || 'Failed to resend invitation');
@@ -767,8 +818,14 @@ export default function UserManagement({ tenant }: HomeTabProps) {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <div>
-                      <p className="text-sm font-medium text-green-800">Invitation created successfully!</p>
-                      <p className="text-xs text-green-600 mt-0.5">Share this link with <strong>{inviteForm.email}</strong></p>
+                      <p className="text-sm font-medium text-green-800">
+                        {inviteEmailSent ? 'Invitation email sent!' : 'Invitation created successfully!'}
+                      </p>
+                      <p className="text-xs text-green-600 mt-0.5">
+                        {inviteEmailSent
+                          ? <>An email was sent to <strong>{inviteForm.email}</strong>. You can also share the link below.</>
+                          : <>We couldn't send an email — share this link with <strong>{inviteForm.email}</strong> directly.</>}
+                      </p>
                     </div>
                   </div>
 
@@ -802,6 +859,7 @@ export default function UserManagement({ tenant }: HomeTabProps) {
                       onClick={() => {
                         setShowInviteModal(false);
                         setInviteLink(null);
+                        setInviteEmailSent(false);
                         setInviteForm({ email: '', first_name: '', last_name: '', role: 'user', department: '', custom_role_id: '' });
                       }}
                       className="px-4 py-2 text-sm font-medium text-white bg-gray-600 rounded-md hover:bg-gray-700"
@@ -883,7 +941,7 @@ export default function UserManagement({ tenant }: HomeTabProps) {
                   <div className="flex justify-end space-x-3 pt-4">
                     <button
                       type="button"
-                      onClick={() => { setShowInviteModal(false); setInviteLink(null); }}
+                      onClick={() => { setShowInviteModal(false); setInviteLink(null); setInviteEmailSent(false); }}
                       className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 transition-colors"
                       disabled={processing}
                     >

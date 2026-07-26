@@ -176,29 +176,18 @@ export async function POST(req: NextRequest) {
     // ── 5. Serialize PDF ──────────────────────────────────────────
     const pdfBytes = await pdfDoc.save();
 
-    // ── 6. Derive PDF storage path (replace extension) ───────────
-    const pdfPath = storagePath.replace(/\.(xlsx?|xls)$/i, '.pdf');
-
-    // ── 7. Upload PDF to Storage ──────────────────────────────────
-    const upRes = await fetch(
-      `${supabaseUrl}/storage/v1/object/${bucket}/${pdfPath}`,
-      {
-        method: 'PUT',
-        headers: {
-          ...storageHeaders,
-          'Content-Type': 'application/pdf',
-          'x-upsert': 'true',
-        },
-        body: pdfBytes,
-      }
-    );
-
-    if (!upRes.ok) {
-      const body = await upRes.text().catch(() => '');
-      return NextResponse.json({ error: `Failed to save PDF: ${upRes.status} ${body}` }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, pdf_path: pdfPath });
+    // Signed PDF is handed back to the caller as bytes rather than written to
+    // Storage here — this route runs with the service-role key, which bypasses
+    // the app's tenant.attachments bookkeeping entirely. The caller (the
+    // client-side review panel) attaches it via the normal authenticated
+    // start_file_upload → Storage upload → finalize_file_upload flow, the same
+    // one every other file field uses, so the signed copy actually shows up as
+    // the record's clientAgreement__c__a attachment instead of an orphaned
+    // object nothing in the app ever references again.
+    return new NextResponse(Buffer.from(pdfBytes), {
+      status: 200,
+      headers: { 'Content-Type': 'application/pdf' },
+    });
   } catch (err: any) {
     console.error('[sign-agreement]', err);
     return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 });

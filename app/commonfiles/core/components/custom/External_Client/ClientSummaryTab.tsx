@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useSupabase } from '../../../providers/SupabaseProvider';
 import toast from 'react-hot-toast';
+import StageDateImport from './StageDateImport';
 
 interface Props {
   tabId: string;
@@ -49,7 +50,7 @@ const fmtDate = (v: string | null) =>
 // ── Single-record detail view ──────────────────────────────────
 function SummaryDetail({ extClientId, onBack }: { extClientId: string; onBack?: () => void }) {
   const supabase = createClientComponentClient();
-  const { tenant } = useSupabase();
+  const { tenant, user, userProfile } = useSupabase();
 
   const [data, setData]       = useState<SummaryRow>({});
   const [summaryId, setSummaryId] = useState<string | null>(null);
@@ -59,9 +60,27 @@ function SummaryDetail({ extClientId, onBack }: { extClientId: string; onBack?: 
   const [saving, setSaving]   = useState(false);
   const [uploading, setUploading] = useState(false);
   const [auditFiles, setAuditFiles] = useState<any[]>([]);
+  const [isCrmOrAdmin, setIsCrmOrAdmin] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { load(); }, [extClientId]);
+
+  // Same resolution pattern RecordDetailView.tsx uses for customRoleName —
+  // admin bypasses, otherwise match the custom role name case-insensitively.
+  useEffect(() => {
+    const resolveRole = async () => {
+      if (userProfile?.role === 'admin') { setIsCrmOrAdmin(true); return; }
+      if (!user?.id || !tenant?.id) return;
+      try {
+        const { data: users } = await supabase.rpc('get_tenant_users', { p_tenant_id: tenant.id });
+        const me = users?.find((u: any) => u.id === user.id);
+        setIsCrmOrAdmin(!!me?.custom_role_name?.toLowerCase().includes('crm'));
+      } catch {
+        setIsCrmOrAdmin(false);
+      }
+    };
+    resolveRole();
+  }, [user?.id, tenant?.id, userProfile?.role]);
 
   const load = async () => {
     setLoading(true);
@@ -216,6 +235,12 @@ function SummaryDetail({ extClientId, onBack }: { extClientId: string; onBack?: 
           )}
         </div>
       </div>
+
+      {isCrmOrAdmin && (
+        <div className="px-6 py-3 border-b border-gray-100">
+          <StageDateImport extClientId={extClientId} isCrmOrAdmin={isCrmOrAdmin} onImported={load} />
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
