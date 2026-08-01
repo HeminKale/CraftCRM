@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // Each stage: label shown on bar, the date column key in recordData,
 // and the picklist value that maps to this stage being "current"
@@ -175,12 +175,25 @@ interface Props {
 
 export default function ClientWorkflowBar({ recordData, picklistOptions }: Props) {
   const currentIdx = resolveCurrentStageIndex(recordData);
-  const [expanded, setExpanded] = useState(false);
-
   const total = STAGES.length;
-  const { start, end } = resolveWindow(currentIdx, total);
+
+  const [windowStart, setWindowStart] = useState(() => resolveWindow(currentIdx, total).start);
+
+  // Recentre the window on the current stage whenever the record itself
+  // changes stage (e.g. navigating to a different record) — but leave the
+  // user's manual prev/next paging alone otherwise.
+  useEffect(() => {
+    setWindowStart(resolveWindow(currentIdx, total).start);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIdx]);
+
   const isWindowed = total > WINDOW_SIZE;
-  const hiddenCount = total - (end - start);
+  const windowEnd = Math.min(windowStart + WINDOW_SIZE, total);
+  const canGoPrev = windowStart > 0;
+  const canGoNext = windowEnd < total;
+
+  const goPrev = () => setWindowStart(s => Math.max(0, s - 1));
+  const goNext = () => setWindowStart(s => Math.min(total - WINDOW_SIZE, s + 1));
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg px-6 py-5 mb-4">
@@ -188,46 +201,55 @@ export default function ClientWorkflowBar({ recordData, picklistOptions }: Props
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
           Client Progress
         </h3>
+      </div>
+
+      <div className="flex items-center gap-2">
         {isWindowed && (
           <button
             type="button"
-            onClick={() => setExpanded(e => !e)}
-            className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
-            title={expanded ? 'Show current stages only' : 'Show all stages'}
+            onClick={goPrev}
+            disabled={!canGoPrev}
+            title="Previous stage"
+            className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full border transition-colors ${
+              canGoPrev
+                ? 'border-gray-300 text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                : 'border-gray-200 text-gray-300 cursor-not-allowed'
+            }`}
           >
-            {expanded ? 'Show less' : `+${hiddenCount} more`}
-            <svg
-              className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
-              fill="none" stroke="currentColor" viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+        )}
+
+        <div className="flex-1 min-w-0">
+          <StageTrack
+            stages={STAGES.slice(windowStart, windowEnd)}
+            offset={windowStart}
+            currentIdx={currentIdx}
+            total={total}
+            recordData={recordData}
+          />
+        </div>
+
+        {isWindowed && (
+          <button
+            type="button"
+            onClick={goNext}
+            disabled={!canGoNext}
+            title="Next stage"
+            className={`flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full border transition-colors ${
+              canGoNext
+                ? 'border-gray-300 text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                : 'border-gray-200 text-gray-300 cursor-not-allowed'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </button>
         )}
       </div>
-
-      {expanded ? (
-        // Full pipeline — scrolls horizontally rather than squeezing every dot
-        <div className="overflow-x-auto pb-1">
-          <div style={{ minWidth: `${total * 75}px` }}>
-            <StageTrack
-              stages={STAGES}
-              offset={0}
-              currentIdx={currentIdx}
-              total={total}
-              recordData={recordData}
-            />
-          </div>
-        </div>
-      ) : (
-        <StageTrack
-          stages={STAGES.slice(start, end)}
-          offset={start}
-          currentIdx={currentIdx}
-          total={total}
-          recordData={recordData}
-        />
-      )}
     </div>
   );
 }
