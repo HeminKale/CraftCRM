@@ -59,6 +59,7 @@ interface FieldMetadata {
   is_system_field: boolean;
   reference_table: string | null;
   reference_display_field: string | null;
+  lookup_role_pattern: string | null;
 }
 
 interface RecordData {
@@ -87,6 +88,35 @@ type TabType = 'information' | string; // 'information' or child object ID
 const isSystemField = (fieldName: string): boolean => {
   const systemFields = ['created_at', 'updated_at', 'created_by', 'updated_by', 'record_owner__a'];
   return systemFields.includes(fieldName);
+};
+
+// Stage 1/2 Audit Report fields (external_clients__a.stage1_report /
+// stage2_report) stay hidden from the linked client until the Tech Reviewer
+// has submitted findings for that stage — before that, status__a is still
+// one of the statuses listed below.
+const STAGE_REPORT_LOCKED_STATUSES: Record<string, Set<string>> = {
+  stage1_report: new Set<string>([
+    'Application_Sent', 'Application_Accepted', 'Quotation_Received',
+    'Client_Agreement_Signed', 'Stage_one_plan_Sent', 'Stage1_Plan_Accepted',
+    'Stage1_Report_Sent', 'Stage1_NCR_RCA_Uploaded', 'Stage1_Auditor_Accepted',
+  ]),
+  stage2_report: new Set<string>([
+    'Application_Sent', 'Application_Accepted', 'Quotation_Received',
+    'Client_Agreement_Signed', 'Stage_one_plan_Sent', 'Stage1_Plan_Accepted',
+    'Stage1_Report_Sent', 'Stage1_NCR_RCA_Uploaded', 'Stage1_Auditor_Accepted',
+    'Stage1_Tech_Findings_Given', 'Stage1_Closed', 'Stage1_Complete',
+    'Stage2_Plan_Sent', 'Stage2_Plan_Accepted', 'Stage2_Report_Sent',
+    'Stage2_NCR_RCA_Uploaded', 'Stage2_Auditor_Accepted',
+    'Stage2_Evidences_Uploaded', 'Stage2_Evidences_Accepted',
+  ]),
+};
+
+const isStageReportLockedForClient = (fieldName: string, recordData: RecordData | null, currentUserId?: string): boolean => {
+  const lockedStatuses = STAGE_REPORT_LOCKED_STATUSES[fieldName];
+  if (!lockedStatuses) return false;
+  if (!currentUserId || recordData?.['client_user_id__a'] !== currentUserId) return false;
+  const status = recordData?.['status__a'];
+  return !status || lockedStatuses.has(status);
 };
 
 // Helper function to normalize field names by removing __a suffix
@@ -254,11 +284,18 @@ export default function RecordDetailView({
     }
   }, [fieldMetadata]);
 
-  // NEW: Load reference field options for edit mode
+  // NEW: Load reference field options for edit mode (also covers 'user_lookup'
+  // fields like auditor_id/tech_reviewer_id — same referenceOptions state,
+  // just sourced from get_tenant_users_by_role_pattern instead of
+  // get_reference_options, filtered to the field's lookup_role_pattern so the
+  // picklist can only ever offer users who actually hold the matching role)
   useEffect(() => {
     const loadReferenceOptions = async () => {
-      const referenceFields = fieldMetadata.filter(f => f.type === 'reference' && f.reference_table);
-      
+      const referenceFields = fieldMetadata.filter(f =>
+        (f.type === 'reference' && f.reference_table) ||
+        (f.type === 'user_lookup' && f.lookup_role_pattern)
+      );
+
       if (referenceFields.length === 0) {
         return;
       }
@@ -266,15 +303,18 @@ export default function RecordDetailView({
       for (const field of referenceFields) {
         // Set loading state for this field
         setReferenceLoading(prev => ({ ...prev, [field.name]: true }));
-        
+
         try {
-          // Use the same RPC function as create modal
-          const { data, error } = await supabase
-            .rpc('get_reference_options', {
-              p_table_name: field.reference_table!,
-              p_tenant_id: tenant?.id || '',
-              p_limit: 100
-            });
+          const { data, error } = field.type === 'user_lookup'
+            ? await supabase.rpc('get_tenant_users_by_role_pattern', {
+                p_role_pattern: field.lookup_role_pattern!
+              })
+            // Use the same RPC function as create modal
+            : await supabase.rpc('get_reference_options', {
+                p_table_name: field.reference_table!,
+                p_tenant_id: tenant?.id || '',
+                p_limit: 100
+              });
 
           if (error) {
             console.error(`❌ Error loading reference options for edit ${field.name}:`, error);
@@ -908,8 +948,11 @@ export default function RecordDetailView({
   const formatFieldValue = (value: any, fieldType: string, fieldName?: string): string => {
     if (value === null || value === undefined) return '-';
 
-    // Resolve user UUID → display name for audit and owner fields
-    if (fieldName === 'created_by' || fieldName === 'updated_by' || fieldName === 'record_owner__a') {
+    // Resolve user UUID → display name for audit, owner, and user-lookup fields
+    // (auditor_id/tech_reviewer_id use userMap for display same as record_owner__a —
+    // it's a tenant-wide id→name map, unfiltered by role, which is fine for read-only
+    // display; edit mode uses the role-filtered picklist from referenceOptions instead)
+    if (fieldName === 'created_by' || fieldName === 'updated_by' || fieldName === 'record_owner__a' || fieldType === 'user_lookup') {
       return resolveUserValue(value, userMap);
     }
 
@@ -1004,7 +1047,7 @@ export default function RecordDetailView({
       );
     }
     
-    if (field.type === 'reference' && field.reference_table) {
+    if ((field.type === 'reference' && field.reference_table) || (field.type === 'user_lookup' && field.lookup_role_pattern)) {
       return (
         <div className="space-y-2">
           <div className="relative">
@@ -1334,16 +1377,22 @@ export default function RecordDetailView({
                                     </label>
                                     
                                     {(field.type === 'file' || field.type === 'files') ? (
-                                      <FileUploadField
-                                        objectId={objectId}
-                                        fieldId={field.id}
-                                        fieldLabel={field.label}
-                                        recordId={recordId}
-                                        multiple={field.type === 'files'}
-                                        readOnly={!isEditing || !can('edit', 'field', field.id)}
-                                        companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
-                                        onUploadComplete={() => setRefreshKey(k => k + 1)}
-                                      />
+                                      isStageReportLockedForClient(field.name, recordData, user?.id) ? (
+                                        <div className="text-sm text-gray-500 bg-gray-50 px-3 py-2 rounded border italic">
+                                          Available once the Tech Reviewer has reviewed the audit report
+                                        </div>
+                                      ) : (
+                                        <FileUploadField
+                                          objectId={objectId}
+                                          fieldId={field.id}
+                                          fieldLabel={field.label}
+                                          recordId={recordId}
+                                          multiple={field.type === 'files'}
+                                          readOnly={!isEditing || !can('edit', 'field', field.id)}
+                                          companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
+                                          onUploadComplete={() => setRefreshKey(k => k + 1)}
+                                        />
+                                      )
                                     ) : isEditing && can('edit', 'field', field.id) ? (
                                       // Edit mode — only if user can edit this specific field
                                       renderEditableField(field, fieldValue)

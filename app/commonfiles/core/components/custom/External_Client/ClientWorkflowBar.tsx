@@ -24,6 +24,7 @@ const STAGES: WorkflowStage[] = [
   { label: 'Application Accepted',       dateKey: 'Application_Accpeted_Date__a',     statusValue: 'Application_Accepted' },
   { label: 'Quotation Received',         dateKey: 'Quotation_Received_Date__a',       statusValue: 'Quotation_Received' },
   { label: 'Client Agreement Signed',    dateKey: 'Client_Agreement_Signed_Date__a',  statusValue: 'Client_Agreement_Signed' },
+  { label: 'Team Assigned',              dateKey: '',                                 statusValue: 'Team_Assigned' },
   { label: 'Stage 1 Plan Sent',          dateKey: 'Stage_one_plan_Sent_Date__a',      statusValue: 'Stage_one_plan_Sent' },
   { label: 'Stage 1 Plan Accepted',      dateKey: 'stage1_plan_accepted_date__a',     statusValue: 'Stage1_Plan_Accepted' },
   { label: 'Stage 1 Report Sent',        dateKey: '',                                 statusValue: 'Stage1_Report_Sent' },

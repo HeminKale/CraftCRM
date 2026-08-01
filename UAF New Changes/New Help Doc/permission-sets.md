@@ -177,6 +177,77 @@ On the object row, check **Read** only, leave **Create** and **Delete** unchecke
 
 ---
 
+## Role → Permission Set auto-assignment (and a real gotcha)
+
+A Permission Set can be attached to a user two ways: directly (rare — e.g.
+one dev/test account in this tenant has a stray `Hero` set attached with no
+role), or automatically whenever their custom role is assigned. The second
+path is what almost every user goes through, and it has a timing behavior
+that has already caused a silent, real production gap once (2026-08-01) —
+documented here so it doesn't happen again.
+
+**Schema (migration `212_fix_file_columns_and_role_automation.sql`):**
+
+| Table/trigger | Purpose |
+|---|---|
+| `tenant.role_permission_set_mappings` | Admin config: "when role X is assigned → also attach Permission Set Y". Managed via `get_role_perm_set_mappings`, `add_role_permission_set_mapping`, `remove_role_permission_set_mapping`. |
+| `system.auto_assign_permission_sets_on_role_change()` | Trigger function: copies the mapped Permission Set(s) into `tenant.user_permission_sets` for one specific user. |
+| `trg_auto_assign_perm_sets` | `AFTER UPDATE OF custom_role_id ON system.users` — **only** fires when a user row's `custom_role_id` column is written to. |
+
+**The gotcha:** creating or editing a row in `role_permission_set_mappings`
+does **not** touch `system.users` at all — so it does **not** retroactively
+attach the mapped Permission Set to users who were already assigned that
+role beforehand. The trigger only fires the next time that specific user's
+`custom_role_id` is written (e.g. reassigning them to a different role, or
+re-saving the same role in the Edit User form). A user invited/assigned to
+a role *before* its mapping existed will keep having **zero** rows in
+`tenant.user_permission_sets` indefinitely, until something re-touches their
+`custom_role_id`.
+
+This matters more than it sounds: per `_check_permission`
+(`209_enforce_permissions_in_rpcs.sql:42-51`), a user with **zero**
+`user_permission_sets` rows gets **full unrestricted access to everything**
+— the same as an admin, not "mostly restricted." So the practical failure
+mode is silent and total, not partial: the Permission Set entries can be
+configured perfectly and the affected user still bypasses all of them.
+
+**What actually happened (2026-08-01):** five roles/Permission
+Sets/mappings were configured for the Stage 1/2 rights-matrix rollout (see
+`rights_Sprint_Planning/rights_S2.md`). Two pre-existing users
+(`auditor@craftcrm.test`, `tech@craftcrm.test`) had their roles set before
+the mappings existed, so the trigger never fired for them — confirmed via
+`SELECT ... FROM system.users su LEFT JOIN tenant.user_permission_sets ups ON ups.user_id = su.id ...`
+showing `NULL` for their assigned Permission Set despite the role→PS mapping
+existing and being correct. Two other users
+(`heminkale7@gmail.com`, `sales1@twe.co.in`) picked up their sets correctly,
+because their `custom_role_id` happened to be touched after the mappings
+were created.
+
+**Practical checklist after adding/changing a role → Permission Set
+mapping:**
+1. Configure the mapping as usual (Settings → User Management, role
+   editor's "Auto-assign permission sets when this role is assigned"
+   section).
+2. For every **existing** user already holding that role, re-open them in
+   User Management and re-save their role (even to the same value) — or run
+   a one-off backfill query:
+   ```sql
+   INSERT INTO tenant.user_permission_sets (user_id, perm_set_id, tenant_id)
+   SELECT su.id, m.permission_set_id, su.tenant_id
+   FROM system.users su
+   JOIN tenant.role_permission_set_mappings m
+     ON m.role_id = su.custom_role_id AND m.tenant_id = su.tenant_id
+   WHERE su.custom_role_id IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM tenant.user_permission_sets ups
+       WHERE ups.user_id = su.id AND ups.perm_set_id = m.permission_set_id
+     );
+   ```
+3. Verify with the same left-join query used above — every user with a role
+   that has a mapping should show a non-null Permission Set name.
+
+---
+
 ## Notes for Admins and Developers
 
 - Admins (`userProfile.role === 'admin'`) are never restricted. `get_my_effective_permissions` returns an empty array for admins, and `can()` returns `true` when `entries.length === 0`.
