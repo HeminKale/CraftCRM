@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import toast from 'react-hot-toast';
 
@@ -45,13 +45,25 @@ export default function StageAuditActionPanel({
   const [registrationDate, setRegistrationDate] = useState('');
   const [processing, setProcessing] = useState(false);
 
+  // ── Assign Team (Auditor / Tech Reviewer) ────────────────────────
+  type TeamOption = { id: string; name: string; email: string };
+  const [auditorOptions, setAuditorOptions] = useState<TeamOption[]>([]);
+  const [techReviewerOptions, setTechReviewerOptions] = useState<TeamOption[]>([]);
+  const [loadingTeamOptions, setLoadingTeamOptions] = useState(false);
+  const [selectedAuditorId, setSelectedAuditorId] = useState('');
+  const [selectedTechReviewerId, setSelectedTechReviewerId] = useState('');
+
   const status       = recordData['status__a'] || null;
   const clientUserId = recordData['client_user_id__a'];
   const isAdmin        = currentUserRole === 'admin';
   const isCRM          = isAdmin || lower(currentCustomRole).includes('crm');
   const isAuditor      = isAdmin || lower(currentCustomRole).includes('auditor');
   const isTech         = isAdmin || lower(currentCustomRole).includes('tech');
+  const isCdc          = isAdmin || lower(currentCustomRole).includes('cdc');
   const isLinkedClient = isAdmin || currentUserId === clientUserId;
+
+  const assignedAuditorId      = recordData['auditor_id__a'] || null;
+  const assignedTechReviewerId = recordData['tech_reviewer_id__a'] || null;
 
   const planUploaded       = hasFile(recordData['stage_one_audit_plan__a']);
   const stage2PlanUploaded = hasFile(recordData['Stage_two_audit_plan__a']);
@@ -65,9 +77,14 @@ export default function StageAuditActionPanel({
   const stage2EvidencesRejectionNotes = recordData['stage2_evidences_rejection_notes__a'];
 
   // ── Checkpoint visibility — Stage 1, one per role, gated by status__a ──
+  // CRM-only: assign the Auditor/Tech Reviewer before the plan can be uploaded
+  // (mandatory checkpoint, migration 244 — start_file_upload hard-blocks the
+  // plan upload server-side until both are set, this is just the matching UI).
+  const showAssignTeamPrompt = isCRM && status === 'Client_Agreement_Signed';
+
   // Plan upload also reappears after a client rejection, so CRM/Auditor can revise.
   const showPlanUploadPrompt = (isCRM || isAuditor) &&
-    (!planUploaded || (status === 'Stage_one_plan_Sent' && !!planClientRemarks));
+    (status === 'Team_Assigned' || (status === 'Stage_one_plan_Sent' && !!planClientRemarks));
   const showPlanReviewPanel  = isLinkedClient && status === 'Stage_one_plan_Sent' && planUploaded;
   const showAuditPrepPrompt  = (isCRM || isAuditor) && status === 'Stage1_Plan_Accepted';
   const showRcaUploadPrompt  = isLinkedClient && status === 'Stage1_Report_Sent';
@@ -90,16 +107,49 @@ export default function StageAuditActionPanel({
   const showStage2EvidencesUploadPrompt = isLinkedClient && status === 'Stage2_Auditor_Accepted';
   const showStage2EvidencesReviewPanel  = (isAuditor || isCRM) && status === 'Stage2_Evidences_Uploaded';
   const showStage2FindingsPanel    = isTech && status === 'Stage2_Evidences_Accepted';
-  const showCdcUploadPrompt        = (isCRM || isTech) && status === 'Stage2_Tech_Findings_Given';
+  // CDC role only (migration 243) — CRM/Tech Reviewer no longer trigger the
+  // auto-advance, so the prompt shouldn't invite them to try.
+  const showCdcUploadPrompt        = isCdc && status === 'Stage2_Tech_Findings_Given';
   const showRegistrationPanel      = (isCRM || isAuditor) && status === 'CDC_Approved';
 
-  const anyVisible = showPlanUploadPrompt || showPlanReviewPanel || showAuditPrepPrompt ||
+  // Read-only "assigned team" strip — shown once assignment exists, to
+  // anyone who'd care (CRM/Auditor/Tech Reviewer/admin).
+  const showAssignedTeamInfo = (isCRM || isAuditor || isTech) &&
+    !!(assignedAuditorId && assignedTechReviewerId);
+
+  const anyVisible = showAssignTeamPrompt || showAssignedTeamInfo ||
+    showPlanUploadPrompt || showPlanReviewPanel || showAuditPrepPrompt ||
     showRcaUploadPrompt || showRcaReviewPanel || showFindingsPanel || showClosurePanel ||
     showFinalReviewPanel ||
     showStage2PlanUploadPrompt || showStage2PlanReviewPanel || showStage2AuditPrepPrompt ||
     showStage2RcaUploadPrompt || showStage2RcaReviewPanel || showStage2EvidencesUploadPrompt ||
     showStage2EvidencesReviewPanel || showStage2FindingsPanel || showCdcUploadPrompt ||
     showRegistrationPanel;
+
+  // ── Fetch Auditor/Tech Reviewer options — needed both to populate the
+  // assign dropdowns and to resolve names for the read-only "assigned" strip.
+  // MUST run unconditionally, before the "nothing to show" early return below
+  // — every hook in this component has to fire on every render regardless of
+  // anyVisible, or the hook count changes between renders (React: "Rendered
+  // more hooks than during the previous render"). This effect used to sit
+  // after that early return, which only surfaced once a record actually had
+  // both auditor_id__a/tech_reviewer_id__a set (flipping anyVisible/
+  // showAssignedTeamInfo across renders) — fixed 2026-08-01.
+  useEffect(() => {
+    if (!showAssignTeamPrompt && !showAssignedTeamInfo) return;
+    let cancelled = false;
+    setLoadingTeamOptions(true);
+    Promise.all([
+      supabase.rpc('get_tenant_users_by_role_pattern', { p_role_pattern: 'auditor' }),
+      supabase.rpc('get_tenant_users_by_role_pattern', { p_role_pattern: 'tech' }),
+    ]).then(([auditorsRes, techRes]) => {
+      if (cancelled) return;
+      if (!auditorsRes.error) setAuditorOptions(auditorsRes.data || []);
+      if (!techRes.error) setTechReviewerOptions(techRes.data || []);
+    }).finally(() => { if (!cancelled) setLoadingTeamOptions(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAssignTeamPrompt, showAssignedTeamInfo, recordId]);
 
   // ── Nothing to show ──────────────────────────────────────────
   if (!anyVisible) {
@@ -120,6 +170,31 @@ export default function StageAuditActionPanel({
     }
     return null;
   }
+
+  // ── CRM: assign Auditor + Tech Reviewer (mandatory before Stage 1 plan) ──
+  const handleAssignTeam = async () => {
+    if (!selectedAuditorId || !selectedTechReviewerId) {
+      toast.error('Select both an Auditor and a Tech Reviewer.');
+      return;
+    }
+    setProcessing(true);
+    try {
+      const { data, error } = await supabase.rpc('assign_stage_team', {
+        p_record_id:        recordId,
+        p_auditor_id:       selectedAuditorId,
+        p_tech_reviewer_id: selectedTechReviewerId,
+      });
+      if (error) { toast.error(error.message); return; }
+      const result = Array.isArray(data) ? data[0] : data;
+      if (!result?.success) { toast.error(result?.message || 'Action failed'); return; }
+      toast.success(result.message);
+      onActionComplete();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to assign team');
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   // ── Generic accept/reject (plan review, RCA review, evidences review) ──
   const handleReview = async (rpc: string, action: 'accept' | 'reject') => {
@@ -265,6 +340,72 @@ export default function StageAuditActionPanel({
 
   return (
     <div className="space-y-3 mb-4">
+
+      {/* ── CRM: Assign Auditor + Tech Reviewer (mandatory before Stage 1 plan) ── */}
+      {showAssignTeamPrompt && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">Assign Team</p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                Select an Auditor and a Tech Reviewer for this record. Both are required
+                before the Stage 1 audit plan can be uploaded.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
+              Action Required
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Auditor</label>
+              <select
+                value={selectedAuditorId}
+                onChange={e => setSelectedAuditorId(e.target.value)}
+                disabled={loadingTeamOptions}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">{loadingTeamOptions ? 'Loading...' : 'Select an Auditor'}</option>
+                {auditorOptions.map(u => (
+                  <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Tech Reviewer</label>
+              <select
+                value={selectedTechReviewerId}
+                onChange={e => setSelectedTechReviewerId(e.target.value)}
+                disabled={loadingTeamOptions}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">{loadingTeamOptions ? 'Loading...' : 'Select a Tech Reviewer'}</option>
+                {techReviewerOptions.map(u => (
+                  <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <button onClick={handleAssignTeam} disabled={processing || loadingTeamOptions}
+            className="mt-3 px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50">
+            {processing ? 'Assigning...' : 'Confirm Assignment'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Read-only: who's assigned, once set ── */}
+      {showAssignedTeamInfo && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg px-5 py-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-600">
+          <span>
+            <span className="font-semibold text-gray-800">Auditor: </span>
+            {auditorOptions.find(u => u.id === assignedAuditorId)?.name || 'Assigned'}
+          </span>
+          <span>
+            <span className="font-semibold text-gray-800">Tech Reviewer: </span>
+            {techReviewerOptions.find(u => u.id === assignedTechReviewerId)?.name || 'Assigned'}
+          </span>
+        </div>
+      )}
 
       {/* ══════════════════════ Stage 1 ══════════════════════ */}
 

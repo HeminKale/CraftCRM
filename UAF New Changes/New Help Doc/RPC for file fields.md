@@ -19,7 +19,9 @@ Related: **permission-sets.md**, **sharing-policy.md**, **S0_S1_S2.md**, **S3.md
 | 239 | `clientAgreement__c` hard block (CRM/admin/linked-client) | ❌ **Not applied** — verified live: an Auditor-role account successfully called `start_file_upload` for `clientAgreement__c` on the sandbox record, which 239's gate should have denied |
 | 240 (two files share this number — `240_client_agreement_single_file.sql` and `240_register_stage_workflow_dates.sql`) | `clientAgreement__c` type fix; registers 9 Stage 1/2 dates | ✅ Both applied |
 | 241 | Separate Excel-import fields, incl. a *different* `registration_date__a` + status-sync trigger | ❌ Not applied |
-| 242 | Registers the remaining 9 notes/remarks columns + 2 dates | Written this session, not yet applied |
+| 242 | Registers the remaining 9 notes/remarks columns + 2 dates | Written, not yet applied |
+| 243 | `cdc_report` auto-advance restricted to CDC role only (was CRM-or-Tech-Reviewer) | Written, not yet applied — see S6_rights_matrix_verification.md |
+| 244 | Assign Team: `auditor_id__a`/`tech_reviewer_id__a`, `Team_Assigned` status, hard block on Stage 1 plan upload until assigned, assignment check added to 7 existing Auditor/Tech-Reviewer RPCs (CRM keeps its bypass) | Written this session, not yet applied — see S6_rights_matrix_verification.md |
 
 The duplicate `240` filename is a pre-existing pattern in this repo, not a new mistake —
 the migration history has several duplicate number prefixes going back to `016`/`026`/`100`/

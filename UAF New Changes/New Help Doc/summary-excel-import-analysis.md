@@ -417,7 +417,11 @@ WHERE object_id = '62803c4d-9430-4d19-a487-4370d52e062a'
   AND display_order BETWEEN 139 AND 154
 ORDER BY display_order;
 
--- Client Summary: expect 13 rows
+-- Client Summary: expect 13 rows PER TENANT — this app is multi-tenant, and
+-- every tenant has its own client_summary__a object (own object_id, same
+-- name). Filtering by name alone (o.name = 'client_summary__a') returns one
+-- matching set per tenant, which looks like duplication but isn't — add
+-- AND o.tenant_id = '<your tenant id>' to check just one tenant cleanly.
 SELECT f.name, f.label, f.type
 FROM tenant.fields f
 JOIN tenant.objects o ON o.id = f.object_id

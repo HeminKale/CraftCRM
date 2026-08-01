@@ -11,10 +11,19 @@ export function useUserMap(): Record<string, string> {
 
   useEffect(() => {
     const load = async () => {
-      const { data } = await supabase
-        .schema('system')
-        .from('users')
-        .select('id, first_name, last_name, email');
+      // Was a direct `.schema('system').from('users').select(...)`, relying
+      // on system.users' RLS policy (auth.jwt()->>'tenant_id'). Every other
+      // user-lookup in this app resolves the caller's tenant via a
+      // SECURITY DEFINER RPC (auth.uid() -> system.users.tenant_id) instead
+      // of a JWT claim — switched to match (migration 247,
+      // get_tenant_user_directory), since the JWT-claim path was silently
+      // returning zero rows for real sessions (auditor_id__a/
+      // tech_reviewer_id__a showed as raw UUIDs instead of names).
+      const { data, error } = await supabase.rpc('get_tenant_user_directory');
+      if (error) {
+        console.error('useUserMap: failed to load tenant user directory', error);
+        return;
+      }
       if (data) {
         const map: Record<string, string> = {};
         for (const u of data) {
