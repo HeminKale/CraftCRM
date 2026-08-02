@@ -71,19 +71,48 @@ export async function POST(req: NextRequest) {
 
     // ── 4. Build PDF ──────────────────────────────────────────────
     const pdfDoc  = await PDFDocument.create();
-    const page    = pdfDoc.addPage([595, 842]); // A4 portrait
+    let   page    = pdfDoc.addPage([595, 842]); // A4 portrait
     const { width, height } = page.getSize();
 
     const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold    = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-    const margin   = 48;
-    const colBx    = margin + 220;          // col B starts here
-    const rowH     = 22;                    // normal row height
-    const sigRowH  = 90;                    // height for signature row
-    const headerH  = 28;
+    const margin     = 48;
+    const colBx      = margin + 220;        // col B starts here (field/value rows only)
+    const lineHeight = 11;
+    const sigMinH    = 90;                  // minimum height reserved for the signature row
 
     let y = height - margin;
+
+    // Splits on existing newlines first (merged cells carry literal \n), then
+    // greedily wraps each resulting line to maxWidth — needed because most of
+    // this document is free-flowing clause text, not short table values.
+    const wrapLines = (text: string, font: any, size: number, maxWidth: number): string[] => {
+      const out: string[] = [];
+      for (const para of text.split('\n')) {
+        const words = para.trim().split(/\s+/).filter(Boolean);
+        if (words.length === 0) { out.push(''); continue; }
+        let current = '';
+        for (const word of words) {
+          const candidate = current ? `${current} ${word}` : word;
+          if (current && font.widthOfTextAtSize(candidate, size) > maxWidth) {
+            out.push(current);
+            current = word;
+          } else {
+            current = candidate;
+          }
+        }
+        if (current) out.push(current);
+      }
+      return out;
+    };
+
+    const ensureSpace = (neededH: number) => {
+      if (y - neededH < margin) {
+        page = pdfDoc.addPage([595, 842]);
+        y = height - margin;
+      }
+    };
 
     // ── Title ─────────────────────────────────────────────────────
     page.drawText('Client Agreement', {
@@ -95,74 +124,89 @@ export async function POST(req: NextRequest) {
 
     // Thin rule
     page.drawLine({ start: { x: margin, y }, end: { x: width - margin, y }, thickness: 1, color: rgb(0.8, 0.8, 0.8) });
-    y -= headerH;
-
-    // ── Column header row ─────────────────────────────────────────
-    page.drawRectangle({ x: margin, y: y - 4, width: width - margin * 2, height: rowH, color: rgb(0.93, 0.93, 0.97) });
-    page.drawText('Field', { x: margin + 4, y, size: 9, font: fontBold, color: rgb(0.3, 0.3, 0.3) });
-    page.drawText('Value', { x: colBx + 4, y, size: 9, font: fontBold, color: rgb(0.3, 0.3, 0.3) });
-    y -= rowH + 4;
+    y -= 28;
 
     // ── Render each row ───────────────────────────────────────────
+    // Rows with a populated column A are short label/value pairs (Company
+    // name, Address, ISO standard, the signature block) and render as a
+    // two-column table. Rows with an empty column A are free-flowing clause
+    // text living entirely in column B, and render as wrapped, full-width
+    // paragraphs. Skipping rows just because column A is blank was the bug
+    // that dropped nearly the whole agreement from the signed PDF.
     for (let i = 0; i < rows.length; i++) {
       const { colA, colB } = rows[i];
-      if (!colA) continue;
+      if (!colA && !colB) continue;
 
       const isClientRow = i === clientRowIndex;
-      const thisRowH    = isClientRow ? sigRowH : rowH;
 
-      // Alternate background
-      if (i % 2 === 0) {
-        page.drawRectangle({ x: margin, y: y - thisRowH + rowH, width: width - margin * 2, height: thisRowH, color: rgb(0.97, 0.97, 0.99) });
+      if (!colA) {
+        // ── Paragraph row ──────────────────────────────────────────
+        const lines = wrapLines(colB, fontRegular, 9, width - margin * 2 - 8);
+        for (const line of lines) {
+          ensureSpace(lineHeight);
+          if (line) {
+            page.drawText(line, { x: margin, y, size: 9, font: fontRegular, color: rgb(0.15, 0.15, 0.15) });
+          }
+          y -= lineHeight;
+        }
+        y -= 6;
+        continue;
       }
 
-      // Vertical divider
-      page.drawLine({ start: { x: colBx, y: y - thisRowH + rowH }, end: { x: colBx, y: y + 2 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+      // ── Field/value row ────────────────────────────────────────
+      const labelWidth = colBx - margin - 8;
+      const valueWidth = width - colBx - margin - 8;
+      const labelLines = wrapLines(colA, fontBold, 9, labelWidth);
+      const valueLines = !isClientRow && colB ? wrapLines(colB, fontRegular, 8.5, valueWidth) : [];
 
-      // Col A label
-      const labelFont = isClientRow ? fontBold : fontRegular;
-      const labelSize = isClientRow ? 9 : 8.5;
-      page.drawText(colA.length > 38 ? colA.slice(0, 38) + '…' : colA, {
-        x: margin + 4, y,
-        size: labelSize, font: labelFont,
-        color: rgb(0.15, 0.15, 0.15),
-      });
-
+      let sigImg: any = null;
+      let sigDims: { width: number; height: number } | null = null;
       if (isClientRow && imageBytes) {
-        // Embed signature image
         try {
-          const sigImg = imageMime === 'image/jpeg'
+          sigImg = imageMime === 'image/jpeg'
             ? await pdfDoc.embedJpg(imageBytes)
             : await pdfDoc.embedPng(imageBytes);
+          sigDims = sigImg.scaleToFit(valueWidth, sigMinH - 16);
+        } catch {
+          // fall through — '[Signature image error]' drawn below
+        }
+      }
 
-          const maxW = width - colBx - margin - 8;
-          const maxH = sigRowH - 8;
-          const dims = sigImg.scaleToFit(maxW, maxH);
+      const contentH = Math.max(
+        labelLines.length * lineHeight,
+        valueLines.length * lineHeight,
+        isClientRow ? (sigDims ? sigDims.height + 16 : sigMinH) : 0,
+      );
+      const thisRowH = contentH + 10;
 
-          page.drawImage(sigImg, {
-            x: colBx + 4,
-            y: y - dims.height + rowH,
-            width: dims.width,
-            height: dims.height,
-          });
-        } catch (imgErr) {
+      ensureSpace(thisRowH);
+
+      if (i % 2 === 0) {
+        page.drawRectangle({ x: margin, y: y - thisRowH + lineHeight, width: width - margin * 2, height: thisRowH, color: rgb(0.97, 0.97, 0.99) });
+      }
+      page.drawLine({ start: { x: colBx, y: y - thisRowH + lineHeight }, end: { x: colBx, y: y + 2 }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+
+      let labelY = y;
+      for (const line of labelLines) {
+        page.drawText(line, { x: margin + 4, y: labelY, size: 9, font: fontBold, color: rgb(0.15, 0.15, 0.15) });
+        labelY -= lineHeight;
+      }
+
+      if (isClientRow) {
+        if (sigImg && sigDims) {
+          page.drawImage(sigImg, { x: colBx + 4, y: y - sigDims.height + lineHeight, width: sigDims.width, height: sigDims.height });
+        } else if (imageBytes) {
           page.drawText('[Signature image error]', { x: colBx + 4, y, size: 8, font: fontRegular, color: rgb(0.8, 0, 0) });
         }
-      } else if (!isClientRow && colB) {
-        page.drawText(colB.length > 42 ? colB.slice(0, 42) + '…' : colB, {
-          x: colBx + 4, y,
-          size: 8.5, font: fontRegular,
-          color: rgb(0.15, 0.15, 0.15),
-        });
+      } else {
+        let valueY = y;
+        for (const line of valueLines) {
+          page.drawText(line, { x: colBx + 4, y: valueY, size: 8.5, font: fontRegular, color: rgb(0.15, 0.15, 0.15) });
+          valueY -= lineHeight;
+        }
       }
 
       y -= thisRowH;
-
-      // Page overflow guard
-      if (y < margin + 60) {
-        const newPage = pdfDoc.addPage([595, 842]);
-        y = newPage.getSize().height - margin;
-      }
     }
 
     // ── Footer: signed-by + date ──────────────────────────────────
