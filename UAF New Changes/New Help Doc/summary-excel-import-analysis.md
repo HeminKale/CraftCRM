@@ -488,6 +488,116 @@ fixed or a decision on what they mean, not something to guess in code.
 
 ---
 
+## 10. "New Client from Summary" — creates both records (2026-08-02)
+
+New button, `NewClientFromSummaryForm.tsx`, on the Summary tab's top-level
+list view (`ClientSummaryTab.tsx`'s `SummaryList`), gated the same way as
+Import Summary (`isCrmOrAdmin`). Unlike Import Summary — which only ever
+updates an existing client — this **creates** both the External Client and
+Client Summary records from a Summary Excel upload in one action.
+
+**Refactor first:** extracted `FIELD_MAPPINGS`, `WIDE_TABLE_MAPPINGS`,
+`STAGE_PROGRESSION`, the date helpers, and the combined wide-table +
+vertical row parser out of `StageDateImport.tsx` into a new shared module,
+`summarySheetMapping.ts`. Both the update flow (`StageDateImport.tsx`) and
+this new create flow import from there — one dictionary, not two forks
+that could drift (this mapping has already had three real bugs fixed
+against production sheets; forking it was too risky).
+
+**Flow:**
+1. Parse the sheet with the exact same `parseSummaryWorkbookRows()` Import
+   Summary uses (Excel only — see decision below).
+2. `create_object_record` on `external_clients__a` with every parsed
+   `extColumn` value, `name` from Company Name (or "New Client"), `Date__a`
+   defaulting to today if the sheet had no "application" date, and
+   `status__a` set directly to whichever stage the sheet's dates reach —
+   computed via `STAGE_PROGRESSION` with no "current status" floor (there
+   is none yet), same forward-scan logic as Import Summary. No approval
+   RPCs are used for any of this — status is asserted directly, same as
+   Import Summary already does for updates, on the reasoning that a
+   CRM/admin uploading a completed Summary sheet is asserting those
+   checkpoints already happened outside the system (rights_S0-S6 docs'
+   approval chain is bypassed here, same as it already is for edits made
+   through Import Summary).
+3. `trg_create_client_summary` (220) fires automatically on that insert,
+   auto-creating the linked `client_summary__a` row backfilled from the
+   External Client fields that were just set.
+4. `upsert_client_summary` layers on the Summary-only fields (mandays,
+   auditor team, cert no, coarser dates, ...) — same call Import Summary's
+   `apply()` already makes for updates.
+5. The uploaded sheet is attached **only** to the new Summary record's
+   existing `audit_pack__a` field (`append_audit_pack_entry`) — confirmed
+   2026-08-02. Nothing is attached anywhere on the new External Client
+   record; the admin uploads the actual stage-workflow documents
+   (application form, quotation, client agreement, stage reports, ...)
+   manually afterward through the normal record page.
+
+**Decisions confirmed 2026-08-02:**
+- Excel only for this button, no PDF yet. The Summary sheet's wide table
+  has ~20 columns in one row, far more than the Application Form's simple
+  2-column layout — splitting that many columns out of raw PDF text
+  (position-guessing, no real column boundaries) is materially more
+  error-prone, and there's no real Summary-PDF sample yet to validate the
+  splitting against (unlike the Application Form, where PDF support was
+  built and clearly flagged as unvalidated too — see §9's cousin work in
+  `NewClientForm.tsx`). Add PDF here once a real exported Summary-PDF
+  exists to check the column-splitting against.
+- The generic "Buttons" framework (`tenant.button__a` +
+  `tenant.button_preferences__a`, configured via Object Manager → Buttons,
+  used for "New Client" on the External Client object) does **not** reach
+  the Summary tab — that framework only renders inside `TabContent.tsx`'s
+  generic object-list view, and Summary is a fully custom tab component
+  (`ClientSummaryTab.tsx`), not a generic object list. The button is
+  hardcoded directly into `SummaryList`, same pattern as Import Summary.
+
+**Not yet done:** live testing (same caveat as 241/251 — no service-role
+key available locally to test end-to-end myself). `npx tsc --noEmit` clean.
+
+### 10a. Admin-only, enforced server-side (2026-08-02)
+
+Follow-up decision: unlike Import Summary (`isCrmOrAdmin` — CRM and admin
+both allowed), creating a brand-new client straight from a Summary sheet is
+**admin only**. CRM must not be able to.
+
+A client-side role check alone would not be a real security boundary —
+same class of gap migration 246 already found and fixed for
+`auditor_id__a`/`tech_reviewer_id__a` ("`update_tenant_record` writes any
+column named in its JSONB payload with zero field-level permission
+checking... a DB trigger is not optional defense-in-depth here, it's the
+only real enforcement available"). `create_object_record` and
+`upsert_client_summary` are both generic, still-needed-elsewhere RPCs
+(`NewClientForm`, the manual Summary edit form, Import Summary) — can't be
+locked to admin-only without breaking those.
+
+**Fix (`252_create_client_from_summary_admin_only.sql`):** a new RPC,
+`create_client_from_summary(p_tenant_id, p_ext_data, p_summary_data)`,
+scoped to exactly this flow. It resolves the caller's role itself and
+returns `{success: false, message: 'Cannot upload summary directly.'}` for
+anyone who isn't admin — before touching either table. For admin, it does
+the External Client insert (dynamic `INSERT` built the same
+`format('%I'/'%L', ...)` way `update_tenant_record`'s dynamic `UPDATE`
+already is) and the Summary-fields upsert (calls `upsert_client_summary`
+internally) in one function call — also more atomic than the previous
+two-separate-round-trips version.
+
+`NewClientFromSummaryForm.tsx` now calls this one RPC instead of
+`create_object_record` + `upsert_client_summary` directly, and its `Props`
+changed from `isCrmOrAdmin` to `isAdmin`. `ClientSummaryTab.tsx`'s
+`SummaryList` hides the button entirely for non-admin (`userProfile?.role
+=== 'admin'`, no custom-role-name lookup needed since CRM no longer
+qualifies) — UX convenience only, the RPC is what actually enforces it.
+
+Confirmed the Summary tab genuinely can't use the generic "Buttons"
+framework (Object Manager → Buttons, `tenant.button__a` +
+`tenant.button_preferences__a`) the way "New Client" uses it on the
+External Client object — that framework only renders inside
+`TabContent.tsx`'s generic object-list view, and `ClientSummaryTab.tsx` is
+a fully custom tab component, never routed through it. The button had to
+be hardcoded directly into `SummaryList`, same pattern Import Summary
+already uses inside `SummaryDetail`.
+
+---
+
 ## 8. Manual deployment steps
 
 Nothing below can be done by the assistant directly — no service-role key is
