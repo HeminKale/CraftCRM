@@ -1,6 +1,6 @@
 # New Client Form
 
-The New Client form creates an External Client record by uploading a pre-formatted Excel application form. It supports single record creation (one Excel file) or bulk creation (multiple Excel files bundled in a ZIP).
+The New Client form creates an External Client record by uploading a pre-formatted Excel **or PDF** application form (added 2026-08-02 — PDF support, same autofill, same `LABEL_TO_COLUMN` mapping). It supports single record creation (one file) or bulk creation (multiple Excel/PDF files bundled in a ZIP).
 
 ---
 
@@ -52,14 +52,15 @@ The New Client form creates an External Client record by uploading a pre-formatt
 ### Step 1 — File selection
 
 The user uploads either:
-- A single `.xlsx` / `.xls` file — one client record
-- A `.zip` file containing multiple Excel files — one record per Excel file (bulk)
+- A single `.xlsx` / `.xls` / `.pdf` file — one client record
+- A `.zip` file containing multiple Excel/PDF files — one record per file (bulk)
 
-**Code path — `NewClientForm.tsx:80-127`:**
+**Code path — `NewClientForm.tsx`, `handleFileChange`:**
 - Single Excel → `parseExcel()` called directly
-- ZIP → `JSZip.loadAsync()` extracts all `.xlsx`/`.xls` entries, `parseExcel()` called for each
+- Single PDF → `parsePdf()` called directly
+- ZIP → `JSZip.loadAsync()` extracts all `.xlsx`/`.xls`/`.pdf` entries, routed to `parseExcel()` or `parsePdf()` per entry by extension
 
-### Step 2 — Excel parsing (`NewClientForm.tsx:46-64`)
+### Step 2 — Parsing
 
 `parseExcel()` reads the first sheet of the Excel file. It expects rows in two-column format:
 
@@ -69,7 +70,9 @@ The user uploads either:
 | Address | 123 Main St |
 | ... | ... |
 
-The label in column A is matched **case-insensitively** against a hardcoded map (`LABEL_TO_COLUMN`, line 11-26):
+`parsePdf()` (added 2026-08-02) expects the same Field/Value two-column content — typically an Excel-to-PDF export of the same form. PDF text extraction (via `pdfjs-dist`'s `getTextContent()`) doesn't come back pre-organized into rows/columns the way Excel cells do, so `parsePdf()` reconstructs them itself: text runs within ~3pt of the same y-coordinate are grouped into one row, then each row is split at its single largest horizontal gap — the space between the Field and Value columns is reliably wider than the space between words within one cell. **Not yet validated against a real Application-Form PDF sample** (unlike the Excel path) — if labels aren't picked up correctly against a real export, this gap-detection heuristic is the first place to check.
+
+Either way, the label is matched **case-insensitively** against a hardcoded map (`LABEL_TO_COLUMN`, line 11-26):
 
 | Excel label | DB column |
 |---|---|
@@ -106,7 +109,7 @@ const recordData = {
 
 ### Step 4 — Application form file attachment
 
-After the record is created, the Excel file itself is attached to the `application_Form` field on the record using the three-step file upload process (RPCs defined in `016_file_upload_rpc_functions.sql`). See **File Upload Field** doc for full detail.
+After the record is created, the uploaded file itself (Excel or PDF) is attached to the `application_Form` field on the record using the three-step file upload process (RPCs defined in `016_file_upload_rpc_functions.sql`) — `start_file_upload` has no file-type restriction, so PDFs attach exactly the same way Excel files always have. See **File Upload Field** doc for full detail.
 
 ### Bulk mode
 
@@ -142,7 +145,9 @@ The form component itself has no permission check — it is only rendered when t
 
 ## Known Constraints
 
-- Excel column mapping is hardcoded in `LABEL_TO_COLUMN` (`NewClientForm.tsx:11-26`) — adding a new Excel field requires a code change
+- Column mapping is hardcoded in `LABEL_TO_COLUMN` (`NewClientForm.tsx:11-26`) — adding a new field requires a code change, and it's shared by both `parseExcel()` and `parsePdf()`
 - The `application_Form` field must exist on the object by that exact name — if not found, the file upload step is silently skipped
 - Records are always created with `status__a = 'Application_Sent'` — there is no way to set a different initial status from this form
 - Bulk upload processes records sequentially, not in parallel
+- `parsePdf()`'s row/column reconstruction (see Step 2) is a general heuristic, not validated against a real Application-Form PDF export — different PDF generators (Excel's own "Save as PDF," Google Sheets export, LibreOffice, a scanned/printed form) lay out text differently, so it may need tuning once tested against a real file
+- `pdfjs-dist`'s worker is loaded from a CDN (`cdnjs.cloudflare.com`) matching the installed package version, not bundled locally — if that CDN is unreachable, PDF parsing (not Excel) fails
