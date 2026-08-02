@@ -353,10 +353,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between mb-3">
             <div>
               <p className="text-sm font-semibold text-blue-900">Assign Team</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                Select an Auditor and a Tech Reviewer for this record. Both are required
-                before the Stage 1 audit plan can be uploaded.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
               Action Required
@@ -423,12 +419,6 @@ export default function StageAuditActionPanel({
               <p className="text-sm font-semibold text-blue-900">
                 {planClientRemarks ? 'Revise Stage 1 Audit Plan' : 'Upload Stage 1 Audit Plan'}
               </p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                {planClientRemarks
-                  ? <>The client rejected the audit plan. Upload a revised plan using the <strong>Stage 1 Audit Plan</strong> field below.</>
-                  : <>Upload the audit plan using the <strong>Stage 1 Audit Plan</strong> field below.
-                      Status will advance to <em>Stage 1 Plan Sent</em> automatically and notify the client for acceptance.</>}
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
               Action Required
@@ -448,9 +438,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between mb-3">
             <div>
               <p className="text-sm font-semibold text-purple-900">Review Stage 1 Audit Plan</p>
-              <p className="text-xs text-purple-600 mt-0.5">
-                Please review the audit plan and accept it, or reject with remarks explaining what needs changing.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 shrink-0 ml-3">
               Awaiting Your Response
@@ -486,11 +473,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-blue-900">Conduct Stage 1 Audit</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                Plan accepted by the client. Set the <strong>Stage 1 Audit Date</strong> field below, then upload the{' '}
-                <strong>Stage 1 Audit Report</strong> and <strong>Stage 1 NCR</strong>.
-                Status will advance to <em>Stage 1 Report Sent</em> automatically.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
               Next Step
@@ -505,10 +487,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-blue-900">Upload NCR + RCA</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                Review the audit report and NCR sheet below, then upload your completed root-cause analysis
-                using the <strong>Stage 1 NCR + RCA</strong> field.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
               Action Required
@@ -528,10 +506,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-blue-900">Review NCR + RCA</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                The client has submitted their root-cause analysis. Accept to hand off to tech review,
-                or reject with auditor remarks.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 shrink-0 ml-3">
               Awaiting Review
@@ -562,11 +536,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between mb-3">
             <div>
               <p className="text-sm font-semibold text-purple-900">Tech Review</p>
-              <p className="text-xs text-purple-600 mt-0.5">
-                Auditor has accepted the NCR + RCA. Review the audit report and RCA, then either record your
-                findings or accept without any. You may optionally attach supporting evidence using the{' '}
-                <strong>Stage 1 Tech Findings File</strong> field further down the page.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 shrink-0 ml-3">
               Awaiting Tech Review
@@ -599,9 +568,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between mb-3">
             <div>
               <p className="text-sm font-semibold text-purple-900">Close Stage 1 Audit</p>
-              <p className="text-xs text-purple-600 mt-0.5">
-                Tech review has passed. Enter closure notes to finalize this stage.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 shrink-0 ml-3">
               Ready to Close
@@ -634,10 +600,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-blue-900">Final Sign-Off</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                Auditor has closed the audit. Accept to mark the client ready for Stage 2,
-                or reject to send it back for re-closure.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 shrink-0 ml-3">
               Final Review
@@ -672,12 +634,6 @@ export default function StageAuditActionPanel({
               <p className="text-sm font-semibold text-blue-900">
                 {stage2PlanClientRemarks ? 'Revise Stage 2 Audit Plan' : 'Upload Stage 2 Audit Plan'}
               </p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                {stage2PlanClientRemarks
-                  ? <>The client rejected the Stage 2 audit plan. Upload a revised plan using the <strong>Stage 2 audit plan</strong> field below.</>
-                  : <>Stage 1 is complete. Upload the Stage 2 audit plan using the <strong>Stage 2 audit plan</strong> field below.
-                      Status will advance to <em>Stage 2 Plan Sent</em> automatically and notify the client for acceptance.</>}
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
               Action Required
@@ -697,9 +653,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between mb-3">
             <div>
               <p className="text-sm font-semibold text-purple-900">Review Stage 2 Audit Plan</p>
-              <p className="text-xs text-purple-600 mt-0.5">
-                Please review the Stage 2 audit plan and accept it, or reject with remarks explaining what needs changing.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 shrink-0 ml-3">
               Awaiting Your Response
@@ -735,11 +688,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-blue-900">Conduct Stage 2 Audit</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                Plan accepted by the client. Set the <strong>Stage 2 Audit Date</strong> field below, then upload the{' '}
-                <strong>Stage 2 Report</strong> and <strong>Stage 2 NCR</strong>.
-                Status will advance to <em>Stage 2 Report Sent</em> automatically.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
               Next Step
@@ -754,10 +702,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-blue-900">Upload Stage 2 NCR + RCA</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                Review the audit report and NCR sheet below, then upload your completed root-cause analysis
-                using the <strong>Stage 2 NCR (Root Cause)</strong> field.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
               Action Required
@@ -777,10 +721,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-blue-900">Review Stage 2 NCR + RCA</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                The client has submitted their root-cause analysis. Accept to request evidences,
-                or reject with auditor remarks.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 shrink-0 ml-3">
               Awaiting Review
@@ -811,10 +751,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-blue-900">Upload Evidences</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                Root-cause analysis accepted. Upload supporting evidences using the{' '}
-                <strong>Stage 2 Evidences</strong> field below.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
               Action Required
@@ -834,10 +770,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-blue-900">Review Evidences</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                The client has uploaded supporting evidences. Accept to close the NCR and hand off to tech review,
-                or reject with auditor remarks so the client can re-upload.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 shrink-0 ml-3">
               Awaiting Review
@@ -868,11 +800,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between mb-3">
             <div>
               <p className="text-sm font-semibold text-purple-900">Tech Review</p>
-              <p className="text-xs text-purple-600 mt-0.5">
-                Auditor has closed the NCR. Review the audit report and RCA, then either record your findings or
-                accept without any. You may optionally attach supporting evidence using the{' '}
-                <strong>Stage 2 Tech Findings File</strong> field further down the page.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 shrink-0 ml-3">
               Awaiting Tech Review
@@ -905,10 +832,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-blue-900">Upload CDC Report</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                Tech review passed. Upload the CDC report using the <strong>CDC Report</strong> field below.
-                Status will advance to <em>CDC Approved</em> automatically — no separate approval step.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
               Action Required
@@ -923,9 +846,6 @@ export default function StageAuditActionPanel({
           <div className="flex items-start justify-between mb-3">
             <div>
               <p className="text-sm font-semibold text-purple-900">Record Client Registration</p>
-              <p className="text-xs text-purple-600 mt-0.5">
-                CDC approved. Enter the date the client was registered to complete the workflow.
-              </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 shrink-0 ml-3">
               Final Step

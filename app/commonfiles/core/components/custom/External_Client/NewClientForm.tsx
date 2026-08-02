@@ -6,6 +6,14 @@ import { useSupabase } from '../../../providers/SupabaseProvider';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Worker loaded from a CDN build matching the installed pdfjs-dist version —
+// avoids Next.js webpack needing extra config to bundle the .mjs worker file.
+// Text extraction only (no page rendering), so no canvas/DOM dependency.
+if (typeof window !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+}
 
 // Maps Excel label (col A, case-insensitive) → DB column name
 const LABEL_TO_COLUMN: Record<string, string> = {
@@ -66,6 +74,66 @@ async function parseExcel(f: File): Promise<Record<string, string>> {
   return fields;
 }
 
+// Parse a single PDF File into the same DB column map parseExcel produces —
+// same LABEL_TO_COLUMN dictionary, same "Field / Value" two-column shape
+// (confirmed 2026-08-02: the PDF is expected to carry the exact same
+// content as the Excel form, typically an Excel-to-PDF export). PDF text
+// extraction doesn't come back pre-organized into rows/columns like Excel
+// cells do — pdfjs-dist's getTextContent() returns a flat list of text runs
+// with x/y positions, so rows have to be reconstructed by grouping runs
+// with close y-coordinates, and the Field/Value column boundary within each
+// row is taken as the single largest horizontal gap between runs (the
+// space between the two table columns is reliably much wider than the
+// space between words within one cell).
+async function parsePdf(f: File): Promise<Record<string, string>> {
+  const buffer = await f.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+
+  const fields: Record<string, string> = {};
+
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent();
+
+    const items = (content.items as any[])
+      .filter(it => typeof it.str === 'string' && it.str.trim() !== '')
+      .map(it => ({ text: it.str as string, x: it.transform[4] as number, y: it.transform[5] as number }));
+
+    type Row = { y: number; items: { text: string; x: number }[] };
+    const rows: Row[] = [];
+    items.forEach(it => {
+      // PDF y increases upward; runs on the same visual line land within a
+      // few points of each other, not necessarily identical.
+      let row = rows.find(r => Math.abs(r.y - it.y) < 3);
+      if (!row) { row = { y: it.y, items: [] }; rows.push(row); }
+      row.items.push({ text: it.text, x: it.x });
+    });
+
+    rows.forEach(row => {
+      row.items.sort((a, b) => a.x - b.x);
+      if (row.items.length < 2) return; // need a label run and a value run
+
+      let maxGap = -Infinity;
+      let splitIdx = 1;
+      for (let i = 1; i < row.items.length; i++) {
+        const gap = row.items[i].x - row.items[i - 1].x;
+        if (gap > maxGap) { maxGap = gap; splitIdx = i; }
+      }
+      const label = row.items.slice(0, splitIdx).map(i => i.text).join(' ').trim();
+      const value = row.items.slice(splitIdx).map(i => i.text).join(' ').trim();
+      if (!label || !value) return;
+
+      const colName = LABEL_TO_COLUMN[label.toLowerCase()];
+      if (colName) {
+        fields[colName] = value;
+        if (colName === 'Company_name__a') fields['name'] = value;
+      }
+    });
+  }
+
+  return fields;
+}
+
 export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel }: Props) {
   const supabase = createClientComponentClient();
   const { user } = useSupabase();
@@ -89,29 +157,39 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
     setExtracting(true);
     try {
       if (selected.name.toLowerCase().endsWith('.zip')) {
-        // Unzip and parse each .xlsx inside
+        // Unzip and parse each .xlsx/.pdf inside
         const zip = await JSZip.loadAsync(await selected.arrayBuffer());
-        const xlsFiles = Object.values(zip.files).filter(
-          f => !f.dir && /\.(xlsx?|xls)$/i.test(f.name)
+        const formFiles = Object.values(zip.files).filter(
+          f => !f.dir && /\.(xlsx?|xls|pdf)$/i.test(f.name)
         );
 
-        if (xlsFiles.length === 0) {
-          setFileError('No Excel files found inside the ZIP.');
+        if (formFiles.length === 0) {
+          setFileError('No Excel or PDF files found inside the ZIP.');
           return;
         }
 
         const parsed: ParsedEntry[] = [];
-        for (const zipEntry of xlsFiles) {
+        for (const zipEntry of formFiles) {
+          const isPdf = /\.pdf$/i.test(zipEntry.name);
           const blob = await zipEntry.async('blob');
           const file = new File([blob], zipEntry.name.split('/').pop() || zipEntry.name, {
-            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            type: isPdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           });
-          const fields = await parseExcel(file);
+          const fields = isPdf ? await parsePdf(file) : await parseExcel(file);
           parsed.push({ file, fields });
         }
 
         setEntries(parsed);
-        toast.success(`Found ${parsed.length} Excel file${parsed.length > 1 ? 's' : ''} in ZIP`);
+        toast.success(`Found ${parsed.length} file${parsed.length > 1 ? 's' : ''} in ZIP`);
+      } else if (selected.name.toLowerCase().endsWith('.pdf')) {
+        // Single PDF — same Field/Value content as the Excel form, per label
+        const fields = await parsePdf(selected);
+        if (Object.keys(fields).length === 0) {
+          setFileError('No recognisable fields found. Check the PDF format.');
+          return;
+        }
+        setEntries([{ file: selected, fields }]);
+        toast.success('Application form ready');
       } else {
         // Single Excel
         const fields = await parseExcel(selected);
@@ -123,7 +201,7 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
         toast.success('Application form ready');
       }
     } catch (err: any) {
-      setFileError('Could not read file. Make sure it is a valid Excel (.xlsx/.xls) or ZIP file.');
+      setFileError('Could not read file. Make sure it is a valid Excel (.xlsx/.xls), PDF, or ZIP file.');
     } finally {
       setExtracting(false);
     }
@@ -246,7 +324,7 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
         <div>
           <h2 className="text-xl font-semibold text-gray-900">New Client</h2>
           <p className="text-sm text-gray-500 mt-1">
-            Upload an Excel application form, or a ZIP containing multiple Excel files to create clients in bulk.
+            Upload an Excel or PDF application form, or a ZIP containing multiple Excel/PDF files to create clients in bulk.
           </p>
         </div>
         {onCancel && (
@@ -265,7 +343,7 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Application Form <span className="text-red-500">*</span>
-              <span className="text-gray-400 font-normal ml-1">(.xlsx, .xls, or .zip)</span>
+              <span className="text-gray-400 font-normal ml-1">(.xlsx, .xls, .pdf, or .zip)</span>
             </label>
             <div
               onClick={() => !hasFile && fileInputRef.current?.click()}
@@ -280,7 +358,7 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.xls,.zip"
+                accept=".xlsx,.xls,.pdf,.zip"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -305,7 +383,7 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
                     </>
                   ) : (
                     <>
-                      <span className="text-sm font-medium text-gray-900">{entries.length} Excel files ready</span>
+                      <span className="text-sm font-medium text-gray-900">{entries.length} files ready</span>
                       <ul className="text-xs text-gray-500 mt-1 space-y-0.5 max-h-24 overflow-y-auto text-left">
                         {entries.map((e, i) => (
                           <li key={i} className="truncate max-w-xs">• {e.fields['Company_name__a'] || e.file.name}</li>
@@ -327,7 +405,7 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                   <p className="text-sm text-gray-500">Click to upload</p>
-                  <p className="text-xs text-gray-400 mt-1">Single Excel or ZIP of multiple Excel files</p>
+                  <p className="text-xs text-gray-400 mt-1">Single Excel/PDF or ZIP of multiple Excel/PDF files</p>
                 </div>
               )}
             </div>

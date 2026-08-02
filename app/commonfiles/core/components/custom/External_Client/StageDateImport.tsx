@@ -43,12 +43,18 @@ const FIELD_MAPPINGS: Record<string, FieldMapping> = {
   'stage 1 plan accept date':        { extColumn: 'stage1_plan_accepted_date__a',                                                 kind: 'date' },
   'stage 1 audit date':              { extColumn: 'stage1_audit_date__a',                                                         kind: 'text' },
   'stage 1 ncr rca acceptance date': { extColumn: 'stage1_auditor_accepted_date__a',                                              kind: 'date' },
+  // Relabeled in a later template revision (confirmed 2026-08-02 against a
+  // real production sheet) — additive alias, same target column, original
+  // label above still works too.
+  'ncr rca date':                    { extColumn: 'stage1_auditor_accepted_date__a',                                              kind: 'date' },
   'tech review 1 date':              { extColumn: 'stage1_tech_final_accepted_date__a', summaryColumn: 'stage1_date__a',          kind: 'date' },
   'stage 2 plan sent date':          { extColumn: 'stage2_plan_sent_date__a',          summaryColumn: 'stage2_plan_sent_date__a', kind: 'date' },
   'stage 2 plan accept date':        { extColumn: 'stage2_plan_accepted_date__a',                                                 kind: 'date' },
   'stage 2 audit date':              { extColumn: 'stage2_audit_date__a',                                                         kind: 'text' },
   'stage 2 audit rca accept date':   { extColumn: 'stage2_auditor_accepted_date__a',                                              kind: 'date' },
+  'stage 2 audit + ncr upload date': { extColumn: 'stage2_auditor_accepted_date__a',                                              kind: 'date' }, // relabel alias, see note above
   'stage 2 ncr closure date':        { extColumn: 'stage2_evidences_accepted_date__a', summaryColumn: 'ncr_closure_date__a',      kind: 'date' },
+  'stage 2 ncr rca accept date':     { extColumn: 'stage2_evidences_accepted_date__a', summaryColumn: 'ncr_closure_date__a',      kind: 'date' }, // relabel alias, see note above
   'tech review 2 date':              { extColumn: 'stage2_tech_findings_date__a',      summaryColumn: 'stage2_date__a',           kind: 'date' },
   'cdc date':                        { extColumn: 'cdc_date__a',                                                                  kind: 'date' },
   'registration date':               { extColumn: 'registration_date__a',              summaryColumn: 'registration_date__a',     kind: 'date' },
@@ -73,10 +79,53 @@ const FIELD_MAPPINGS: Record<string, FieldMapping> = {
   'director name':                   { extColumn: 'director_name__a',          summaryColumn: 'director_name__a',     kind: 'text' },
   'auditor team':                    { extColumn: 'auditor_team__a',           summaryColumn: 'auditor_team__a',      kind: 'text' },
   'application reviewer name':       { extColumn: 'application_reviewer__a',   summaryColumn: 'application_reviewer__a', kind: 'text' },
+  'appl reviewr name':               { extColumn: 'application_reviewer__a',   summaryColumn: 'application_reviewer__a', kind: 'text' }, // abbreviated spelling seen in a real wide-table header, confirmed 2026-08-02
   'lead auditor':                    { extColumn: 'lead_auditor__a',           summaryColumn: 'lead_auditor__a',      kind: 'text' },
   'food category':                   { extColumn: 'food_category__a',          summaryColumn: 'food_category__a',     kind: 'text' },
   'soa date':                        { extColumn: 'soa_date__a',               summaryColumn: 'soa_date__a',          kind: 'text' },
   // 'type', 'Surveillance 1 mandays', 'Recert mandays' — deferred, not mapped (see analysis doc §5a)
+};
+
+// Section A recognized a second time, for a *wide-table* header row —
+// COMPANY NAME | Standard | ... across columns, one client's values in the
+// single row beneath it. Confirmed 2026-08-02 against a real production
+// sheet: this table sits at rows 0-1, immediately above the vertical date
+// list (rows vary), and is a stable, recurring structure, not a one-off.
+//
+// Deliberately a separate, smaller dictionary from FIELD_MAPPINGS rather
+// than reusing it wholesale: the wide table also carries columns that
+// *restate* several of the vertical list's dates under sometimes-different
+// header text (Reg date, Stg 1 date, Stage 2 date, Stage 2 start date, CDC,
+// Tech review stg 1/2 Date, Client agreement date, Quotation, Application
+// date) — confirmed 2026-08-02 that when both are present, the vertical
+// list stays the source of truth and these wide-table restatements are
+// read as reference/notes only, never imported. "Stage 2 start date" and
+// standalone "CDC" don't correspond to any existing field either way and
+// are left unmapped for now (not yet confirmed what they should mean).
+// Only genuinely wide-table-only columns (company/audit metadata, no date
+// duplication) are listed here.
+const WIDE_TABLE_MAPPINGS: Record<string, FieldMapping> = {
+  'company name':              FIELD_MAPPINGS['company name'],
+  'standard':                  FIELD_MAPPINGS['standard'],
+  'certificate no':            FIELD_MAPPINGS['certificate no'],
+  'country':                   FIELD_MAPPINGS['country'],
+  'address':                   FIELD_MAPPINGS['address'],
+  'scope':                     FIELD_MAPPINGS['scope'],
+  'iaf code':                  FIELD_MAPPINGS['iaf code'],
+  'no of empl':                FIELD_MAPPINGS['no of empl'],
+  'total mandays':             FIELD_MAPPINGS['total mandays'],
+  'stg 1 manday':              FIELD_MAPPINGS['stg 1 manday'],
+  'stg 2 manday':              FIELD_MAPPINGS['stg 2 manday'],
+  'auditor stg 1':             FIELD_MAPPINGS['auditor stg 1'],
+  'auditor stg 2':             FIELD_MAPPINGS['auditor stg 2'],
+  'tech reviewer':             FIELD_MAPPINGS['tech reviewer'],
+  'director name':             FIELD_MAPPINGS['director name'],
+  'auditor team':              FIELD_MAPPINGS['auditor team'],
+  'application reviewer name': FIELD_MAPPINGS['application reviewer name'],
+  'appl reviewr name':         FIELD_MAPPINGS['appl reviewr name'],
+  'lead auditor':              FIELD_MAPPINGS['lead auditor'],
+  'food category':             FIELD_MAPPINGS['food category'],
+  'soa date':                  FIELD_MAPPINGS['soa date'],
 };
 
 // Mirrors ClientWorkflowBar.tsx's STAGES order — keep in sync if that array
@@ -179,17 +228,43 @@ export default function StageDateImport({ extClientId, isCrmOrAdmin, onImported 
       const sheetRows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
 
       const parsed: ParsedRow[] = [];
-      for (const r of sheetRows) {
+
+      // Wide-table pass: row 0 as headers, row 1 as the single data row —
+      // if any header in row 0 is recognized, treat both rows as consumed
+      // by this table and skip them in the vertical pass below (otherwise
+      // row 0's headers would themselves get misread as vertical
+      // label/value pairs, e.g. label="Company Name", value="Standard").
+      const headerRow = sheetRows[0] || [];
+      const dataRow = sheetRows[1] || [];
+      let wideTableDetected = false;
+      headerRow.forEach((cell, colIdx) => {
+        const header = String(cell ?? '').trim();
+        const mapping = WIDE_TABLE_MAPPINGS[header.toLowerCase()];
+        if (!mapping) return;
+        wideTableDetected = true;
+        const rawValue = dataRow[colIdx];
+        const value = mapping.kind === 'date'
+          ? parseFlexibleDate(rawValue)
+          : (String(rawValue ?? '').trim() || null);
+        parsed.push({ label: header, mapping, raw: String(rawValue ?? '').trim(), value });
+      });
+
+      // Vertical pass: label in column A, value in column B — falling back
+      // to column C when B is blank (a later template revision, confirmed
+      // 2026-08-02 against a real production sheet, shifted the value over
+      // one column; supporting both keeps older-format sheets working too).
+      sheetRows.forEach((r, rowIdx) => {
+        if (wideTableDetected && (rowIdx === 0 || rowIdx === 1)) return;
         const label = String(r[0] ?? '').trim();
-        if (!label) continue;
+        if (!label) return;
         const mapping = FIELD_MAPPINGS[label.toLowerCase()];
-        if (!mapping) continue; // unmapped label — silently ignored, matches NewClientForm's convention
-        const rawValue = r[1];
+        if (!mapping) return; // unmapped label — silently ignored, matches NewClientForm's convention
+        const rawValue = (r[1] !== undefined && String(r[1]).trim() !== '') ? r[1] : r[2];
         const value = mapping.kind === 'date'
           ? parseFlexibleDate(rawValue)
           : (String(rawValue ?? '').trim() || null);
         parsed.push({ label, mapping, raw: String(rawValue ?? '').trim(), value });
-      }
+      });
 
       if (parsed.length === 0) {
         toast('No recognized fields found in this file.', { icon: '⚠️' });

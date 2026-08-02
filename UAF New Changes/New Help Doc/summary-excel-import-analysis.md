@@ -388,6 +388,103 @@ too — confirmed via `permission-sets.md` before writing any code, not assumed.
   the original date-only importer was (that pass caught the timezone bug).
   Given the scope increase (two RPCs redefined, a new trigger, 29 new
   columns across two tables), a live pass matters more here, not less.
+- **Migration 251 has not been applied either** (see §9 below) — same
+  manual-deploy caveat as 241.
+
+---
+
+## 9. Found and fixed (2026-08-02)
+
+Two follow-up issues surfaced after 241 shipped and a real production sheet
+(`Untitled spreadsheet (4).xlsx`, newer than the sample §1-§6 were written
+against) was checked against the code.
+
+### 9a. "Summary record vanishes" after import — fixed, migration 251
+
+`upsert_client_summary`'s "row doesn't exist yet" branch (241, and
+originally 220) inserted a bare row — `tenant_id` + `external_client_id__a`
+only, nothing else — whenever no `client_summary__a` row was found for that
+client. Normally unreachable: `trg_create_client_summary` (220)
+auto-populates a full row the moment an External Client is created. But it
+*is* the only path for any client that predates 220, or whose summary row
+is otherwise missing — for those, the first Import Summary / manual Summary
+edit creates the row via this bare-insert branch, and if that particular
+write doesn't happen to include a Company Name, `company_name__a` stays
+`NULL` forever. `SummaryDetail`'s header reads
+`data['company_name__a'] || 'Client Summary'` — blank title, looks like the
+record disappeared, even though the row and its other data are intact.
+
+**Fix (`251_backfill_client_summary_on_upsert.sql`):** the insert branch now
+backfills `company_name__a`/`address__a`/`scope__a`/`email__a`/
+`contact_person__a`/`iso_standards__a`/`application_date__a` from the linked
+`external_clients__a` record first — the same backfill `trg_create_client_summary`
+already does at normal creation time — before applying `p_data` on top.
+`append_audit_pack_entry` (222) had the identical bare-insert branch,
+reachable independently (a sheet with no Company Name row but a file still
+attached never calls `upsert_client_summary` at all), so it got the same
+fix in the same migration.
+
+### 9b. Real production sheet doesn't match the assumed format
+
+§1's "confirmed 2026-07-26: format will unify to one-row-per-field" did not
+hold — the actual current template (`Untitled spreadsheet (4).xlsx`) still
+has Section A as a wide table (row 0 header, row 1 data), same shape as the
+original §1 sample, sitting above the vertical date list. The parser only
+ever read column-A/B pairs per row, so against this file it would have
+misread row 0 itself as data (`label="Company Name", value="Standard"` —
+the next header, not real data) and written garbage.
+
+Three more mismatches found comparing this file's actual headers against
+what was coded:
+
+1. **Vertical list's value column shifted from B to C.** Every row in the
+   date list now has the value one column further right, with column B
+   blank. Against this file, every vertical date would have silently read
+   as blank and been skipped.
+2. **Three vertical labels were reworded** (same position in the list, same
+   target column): "stage 2 NCR closure date" → "stage 2 NCR RCA accept
+   date"; "stage 2 audit RCA accept date" → "stage 2 audit + NCR upload
+   date"; "Stage 1 NCR RCA acceptance date" → "NCR RCA date".
+3. **The wide table has columns that don't exist in the original §2
+   mapping**: `Stg 1 date`, `Stage 2 date`, `Stage 2 start date`, `CDC`,
+   `Tech review stg 1/2 Date`, `Client agreement date`, `Quotation`,
+   `Application date` (mostly restatements of the vertical list under
+   different header text — see decision below), plus `appl reviewr name`
+   (abbreviated, doesn't match "application reviewer name") and several
+   trailing columns with real data (a website, an email, a description) but
+   **no header text at all** — those can't be mapped by label no matter what
+   the importer does; needs a template fix, not a code fix.
+
+**Decisions (confirmed 2026-08-02):**
+- Where the wide table and the vertical list both carry the same date, the
+  **vertical list wins** — the wide table's versions of these columns are
+  read as reference/notes only, never imported, even where recognized.
+- `Stage 2 start date` and standalone `CDC` don't correspond to any existing
+  field either way — left unmapped for now, not yet confirmed what they
+  should mean.
+
+**Fix (`StageDateImport.tsx`):**
+- Added a `WIDE_TABLE_MAPPINGS` dictionary — company/audit-metadata columns
+  only (company name, standard, certificate no, country, address, scope,
+  IAF code, mandays, auditor stg 1/2, tech reviewer, director name, auditor
+  team, application reviewer name + `appl reviewr name` alias, lead
+  auditor, food category, SOA date). Deliberately excludes every column
+  that restates a vertical-list date, per the decision above.
+- `handleFile` now does a wide-table pass first (row 0 headers × row 1
+  data, using `WIDE_TABLE_MAPPINGS`) before the vertical pass, and skips
+  rows 0-1 in the vertical pass if the wide-table pass found anything —
+  otherwise row 0's own header text would get misread as a vertical
+  label/value pair.
+- The vertical pass now reads column B, falling back to column C when B is
+  blank, so both the old and the shifted layout work.
+- Added `ncr rca date`, `stage 2 audit + ncr upload date`, and
+  `stage 2 ncr rca accept date` as additive aliases in `FIELD_MAPPINGS` —
+  the original labels still work too, both point at the same columns.
+
+Not yet done: creating fields for `Stage 2 start date` / `CDC`, and fixing
+the header-less trailing columns — both need the source template itself
+fixed or a decision on what they mean, not something to guess in code.
+`npx tsc --noEmit` clean after these changes.
 
 ---
 
