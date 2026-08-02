@@ -5,6 +5,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useSupabase } from '../../../providers/SupabaseProvider';
 import toast from 'react-hot-toast';
 import StageDateImport from './StageDateImport';
+import NewClientFromSummaryForm from './NewClientFromSummaryForm';
 
 interface Props {
   tabId: string;
@@ -268,10 +269,23 @@ function SummaryDetail({ extClientId, onBack }: { extClientId: string; onBack?: 
 // ── Top-level list view ────────────────────────────────────────
 function SummaryList() {
   const supabase = createClientComponentClient();
+  const { userProfile } = useSupabase();
   const [rows, setRows]         = useState<SummaryRow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+  const [showNewModal, setShowNewModal] = useState(false);
+
+  // Admin-only, unlike Import Summary (isCrmOrAdmin in SummaryDetail) —
+  // confirmed 2026-08-02: creating a brand-new client straight from a
+  // Summary sheet skips the entire approval chain (rights_S0-S6), which is
+  // acceptable for admin only, not CRM. This is a UX convenience (hides the
+  // button so CRM never sees an action they can't use) — the actual
+  // enforcement is server-side in create_client_from_summary (252), which
+  // checks role itself and returns "Cannot upload summary directly." if
+  // called by anyone else, same as NewClientFromSummaryForm.tsx's own
+  // belt-and-suspenders check before calling it.
+  const isAdmin = userProfile?.role === 'admin';
 
   useEffect(() => { load(); }, []);
 
@@ -312,14 +326,37 @@ function SummaryList() {
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
         <h2 className="text-base font-semibold text-gray-900">Client Summary</h2>
-        <input
-          type="text"
-          placeholder="Search by company…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-56 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        />
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            placeholder="Search by company…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-56 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          {isAdmin && (
+            <button
+              onClick={() => setShowNewModal(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+              New Client from Summary
+            </button>
+          )}
+        </div>
       </div>
+
+      {showNewModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-16 mx-auto p-6 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white max-h-[90vh] overflow-y-auto">
+            <NewClientFromSummaryForm
+              isAdmin={isAdmin}
+              onCreated={() => { setShowNewModal(false); load(); }}
+              onCancel={() => setShowNewModal(false)}
+            />
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
