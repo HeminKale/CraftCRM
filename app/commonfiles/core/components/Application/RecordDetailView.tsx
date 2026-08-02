@@ -1351,25 +1351,6 @@ export default function RecordDetailView({
 
       return (
         <div className="p-6 space-y-6">
-          {/* Edit Mode Indicator */}
-          {isEditing && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-center">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-blue-800">Edit Mode</h3>
-                  <p className="text-sm text-blue-700 mt-1">
-                    You are currently editing this record. Make your changes and click "Save Changes" to save, or "Cancel" to discard changes.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
           {sections.map(section => {
             const sectionBlocks = layoutBlocks.filter(block => block.section === section && block.is_visible);
             
