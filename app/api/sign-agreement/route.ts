@@ -27,12 +27,14 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 1. Download the Excel from Storage ───────────────────────
-    const dlRes = await fetch(
-      `${supabaseUrl}/storage/v1/object/${bucket}/${storagePath}`,
-      { headers: storageHeaders }
-    );
+    // tenant-uploads is a private bucket, so use /authenticated/ prefix
+    const dlUrl = `${supabaseUrl}/storage/v1/object/authenticated/${bucket}/${storagePath}`;
+    console.log('[sign-agreement] Downloading from:', dlUrl);
+
+    const dlRes = await fetch(dlUrl, { headers: storageHeaders });
     if (!dlRes.ok) {
       const body = await dlRes.text().catch(() => '');
+      console.error('[sign-agreement] Download failed:', dlRes.status, body);
       return NextResponse.json({ error: `Download failed: ${dlRes.status} ${body}` }, { status: 500 });
     }
     const xlsxBuffer = Buffer.from(await dlRes.arrayBuffer());
