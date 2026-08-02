@@ -56,10 +56,16 @@ export default function StageAuditActionPanel({
   const status       = recordData['status__a'] || null;
   const clientUserId = recordData['client_user_id__a'];
   const isAdmin        = currentUserRole === 'admin';
-  const isCRM          = isAdmin || lower(currentCustomRole).includes('crm');
-  const isAuditor      = isAdmin || lower(currentCustomRole).includes('auditor');
-  const isTech         = isAdmin || lower(currentCustomRole).includes('tech');
-  const isCdc          = isAdmin || lower(currentCustomRole).includes('cdc');
+  // The linked client themselves — excluding admin, even though admin can
+  // also open a client's record. Used as a hard exclusion below so a role-
+  // name mixup (or a client whose custom role string happens to contain one
+  // of these substrings) can never grant them a CRM/Auditor/Tech/CDC-only
+  // action panel meant for someone reviewing their record, not living in it.
+  const isClientOnly   = !isAdmin && currentUserId === clientUserId;
+  const isCRM          = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('crm'));
+  const isAuditor      = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('auditor'));
+  const isTech         = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('tech'));
+  const isCdc          = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('cdc'));
   const isLinkedClient = isAdmin || currentUserId === clientUserId;
 
   const assignedAuditorId      = recordData['auditor_id__a'] || null;

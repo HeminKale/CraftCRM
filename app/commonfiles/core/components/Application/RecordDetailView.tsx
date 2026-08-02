@@ -92,31 +92,78 @@ const isSystemField = (fieldName: string): boolean => {
 
 // Stage 1/2 Audit Report fields (external_clients__a.stage1_report /
 // stage2_report) stay hidden from the linked client until the Tech Reviewer
-// has submitted findings for that stage — before that, status__a is still
-// one of the statuses listed below.
-const STAGE_REPORT_LOCKED_STATUSES: Record<string, Set<string>> = {
-  stage1_report: new Set<string>([
-    'Application_Sent', 'Application_Accepted', 'Quotation_Received',
-    'Client_Agreement_Signed', 'Stage_one_plan_Sent', 'Stage1_Plan_Accepted',
-    'Stage1_Report_Sent', 'Stage1_NCR_RCA_Uploaded', 'Stage1_Auditor_Accepted',
-  ]),
-  stage2_report: new Set<string>([
-    'Application_Sent', 'Application_Accepted', 'Quotation_Received',
-    'Client_Agreement_Signed', 'Stage_one_plan_Sent', 'Stage1_Plan_Accepted',
-    'Stage1_Report_Sent', 'Stage1_NCR_RCA_Uploaded', 'Stage1_Auditor_Accepted',
-    'Stage1_Tech_Findings_Given', 'Stage1_Closed', 'Stage1_Complete',
-    'Stage2_Plan_Sent', 'Stage2_Plan_Accepted', 'Stage2_Report_Sent',
-    'Stage2_NCR_RCA_Uploaded', 'Stage2_Auditor_Accepted',
-    'Stage2_Evidences_Uploaded', 'Stage2_Evidences_Accepted',
-  ]),
+// has submitted findings for that stage. Previously this was an enumerated
+// "locked while status is one of these" allowlist — found (2026-08-02) to
+// fail OPEN for any status not in the list (e.g. a manually-set test status
+// like 'Client_Registered'), which is the wrong default for a security gate.
+// Rewritten as a canonical status order + "unlocked once rank >= threshold"
+// check, so an unrecognized/never-seen status__a defaults to LOCKED instead.
+const STAGE_STATUS_ORDER: string[] = [
+  'Client_Registered',
+  'Application_Sent', 'Application_Accepted', 'Quotation_Received', 'Client_Agreement_Signed',
+  'Team_Assigned', 'Stage_one_plan_Sent', 'Stage1_Plan_Accepted', 'Stage1_Report_Sent',
+  'Stage1_NCR_RCA_Uploaded', 'Stage1_Auditor_Accepted', 'Stage1_Tech_Findings_Given',
+  'Stage1_Closed', 'Stage1_Complete',
+  'Stage2_Plan_Sent', 'Stage2_Plan_Accepted', 'Stage2_Report_Sent',
+  'Stage2_NCR_RCA_Uploaded', 'Stage2_Auditor_Accepted',
+  'Stage2_Evidences_Uploaded', 'Stage2_Evidences_Accepted', 'Stage2_Tech_Findings_Given',
+  'Stage2_Closed', 'Stage2_Complete', 'CDC_Approved',
+];
+
+const STAGE_REPORT_UNLOCK_AT: Record<string, string> = {
+  stage1_report: 'Stage1_Tech_Findings_Given',
+  stage2_report: 'Stage2_Tech_Findings_Given',
 };
 
 const isStageReportLockedForClient = (fieldName: string, recordData: RecordData | null, currentUserId?: string): boolean => {
-  const lockedStatuses = STAGE_REPORT_LOCKED_STATUSES[fieldName];
-  if (!lockedStatuses) return false;
+  const unlockAt = STAGE_REPORT_UNLOCK_AT[fieldName];
+  if (!unlockAt) return false;
   if (!currentUserId || recordData?.['client_user_id__a'] !== currentUserId) return false;
   const status = recordData?.['status__a'];
-  return !status || lockedStatuses.has(status);
+  const currentRank = status ? STAGE_STATUS_ORDER.indexOf(status) : -1;
+  const unlockRank = STAGE_STATUS_ORDER.indexOf(unlockAt);
+  return currentRank < unlockRank; // unknown/unranked status defaults to locked
+};
+
+// Hard floor on who may upload/replace these specific stage-workflow file
+// fields, independent of Permission Set configuration. Needed because
+// start_file_upload has no role check at all for most of these fields (only
+// quotation / clientAgreement__c / stage_one_audit_plan's assignment-
+// existence check are hard-blocked server-side — see 232/239/244) — so an
+// unrestricted (default) Permission Set entry otherwise lets any role upload
+// straight through the generic Page Layout form, bypassing the rights
+// matrix's upload-role column entirely. A Permission Set `can_edit=false`
+// can still narrow this further; it just can never widen past it.
+const FILE_FIELD_UPLOAD_ROLE: Record<string, 'crm_or_auditor' | 'client_only'> = {
+  stage_one_audit_plan: 'crm_or_auditor',
+  Stage_two_audit_plan: 'crm_or_auditor',
+  stage1_report:        'crm_or_auditor',
+  stage1_ncr:           'crm_or_auditor',
+  stage2_report:        'crm_or_auditor',
+  stage2_ncr:           'crm_or_auditor',
+  stage1_ncr_rca:       'client_only',
+  stage2_ncr_rca:       'client_only',
+  stage2_evidences:     'client_only',
+};
+
+const isFileUploadAllowedForRole = (
+  fieldName: string,
+  recordData: RecordData | null,
+  currentUserId: string | undefined,
+  userRole: string | undefined,
+  customRoleName: string | null,
+): boolean => {
+  const rule = FILE_FIELD_UPLOAD_ROLE[fieldName];
+  if (!rule) return true; // not one of the hard-floored fields — Permission Set decides alone
+
+  if (userRole === 'admin') return true;
+
+  if (rule === 'client_only') {
+    return !!currentUserId && recordData?.['client_user_id__a'] === currentUserId;
+  }
+
+  const role = (customRoleName || '').toLowerCase();
+  return role.includes('crm') || role.includes('auditor');
 };
 
 // Helper function to normalize field names by removing __a suffix
@@ -1388,7 +1435,10 @@ export default function RecordDetailView({
                                           fieldLabel={field.label}
                                           recordId={recordId}
                                           multiple={field.type === 'files'}
-                                          readOnly={!isEditing || !can('edit', 'field', field.id)}
+                                          readOnly={
+                                            !can('edit', 'field', field.id) ||
+                                            !isFileUploadAllowedForRole(field.name, recordData, user?.id, userProfile?.role, customRoleName)
+                                          }
                                           companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
                                           onUploadComplete={() => setRefreshKey(k => k + 1)}
                                         />

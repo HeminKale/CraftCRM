@@ -59,6 +59,17 @@ current behavior there stays as-is.
 
 ---
 
+## Sprint 5 — Live UI testing feedback
+
+**2026-08-02.** Four bugs found testing the built workflow across CRM/
+Auditor/Client logins — all four are rows already in the original image
+(7, 9, 11, 12), not new asks. Root cause: most stage file fields (plan/
+report/NCR/RCA/evidences) never had a real upload-role gate, only Permission
+Sets (client-side only, never configured for these fields). Fixed at both
+layers — see [`rights_S5.md`](rights_S5.md) — except one item that needs a
+query result back before it can be confirmed as fixed vs. a test-data
+artifact.
+
 ## Explicitly out of scope for this plan
 
 - **Certificate issuance (row 25):** disconnected subsystem, doc says "not
