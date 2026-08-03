@@ -77,10 +77,15 @@ export default function StageAuditActionPanel({
   const planClientRemarks       = recordData['stage1_plan_client_remarks__a'];
   const rcaRejectionNotes       = recordData['stage1_rejection_notes__a'];
   const techFinalRejectionNotes = recordData['stage1_tech_final_rejection_notes__a'];
+  // Reuses the same column the Tech Reviewer's findings are submitted into —
+  // only meaningful while status is Stage1_Tech_Findings_Rejected (cleared by
+  // finalize_file_upload once the Auditor re-uploads the report/NCR).
+  const techFindingsRevisionNotes = recordData['stage1_tech_findings_notes__a'];
 
   const stage2PlanClientRemarks      = recordData['stage2_plan_client_remarks__a'];
   const stage2RcaRejectionNotes      = recordData['stage2_rejection_notes__a'];
   const stage2EvidencesRejectionNotes = recordData['stage2_evidences_rejection_notes__a'];
+  const stage2TechFindingsRevisionNotes = recordData['stage2_tech_findings_notes__a'];
 
   // ── Checkpoint visibility — Stage 1, one per role, gated by status__a ──
   // CRM-only: assign the Auditor/Tech Reviewer before the plan can be uploaded
@@ -96,6 +101,10 @@ export default function StageAuditActionPanel({
   const showRcaUploadPrompt  = isLinkedClient && status === 'Stage1_Report_Sent';
   const showRcaReviewPanel   = (isAuditor || isCRM) && status === 'Stage1_NCR_RCA_Uploaded';
   const showFindingsPanel    = isTech && status === 'Stage1_Auditor_Accepted';
+  // Tech Reviewer gave findings (rather than accepting with none) — sent
+  // back to Auditor/CRM to revise and re-upload the report/NCR, which loops
+  // straight back to showFindingsPanel above (skips the Client/RCA cycle).
+  const showTechFindingsRevisionPrompt = (isCRM || isAuditor) && status === 'Stage1_Tech_Findings_Rejected';
   const showClosurePanel     = isAuditor && status === 'Stage1_Tech_Findings_Given';
   const showFinalReviewPanel = isTech && status === 'Stage1_Closed';
 
@@ -113,6 +122,8 @@ export default function StageAuditActionPanel({
   const showStage2EvidencesUploadPrompt = isLinkedClient && status === 'Stage2_Auditor_Accepted';
   const showStage2EvidencesReviewPanel  = (isAuditor || isCRM) && status === 'Stage2_Evidences_Uploaded';
   const showStage2FindingsPanel    = isTech && status === 'Stage2_Evidences_Accepted';
+  // Mirrors showTechFindingsRevisionPrompt above, Stage 2 side.
+  const showStage2TechFindingsRevisionPrompt = (isCRM || isAuditor) && status === 'Stage2_Tech_Findings_Rejected';
   // CDC role only (migration 243) — CRM/Tech Reviewer no longer trigger the
   // auto-advance, so the prompt shouldn't invite them to try.
   const showCdcUploadPrompt        = isCdc && status === 'Stage2_Tech_Findings_Given';
@@ -125,11 +136,13 @@ export default function StageAuditActionPanel({
 
   const anyVisible = showAssignTeamPrompt || showAssignedTeamInfo ||
     showPlanUploadPrompt || showPlanReviewPanel || showAuditPrepPrompt ||
-    showRcaUploadPrompt || showRcaReviewPanel || showFindingsPanel || showClosurePanel ||
+    showRcaUploadPrompt || showRcaReviewPanel || showFindingsPanel ||
+    showTechFindingsRevisionPrompt || showClosurePanel ||
     showFinalReviewPanel ||
     showStage2PlanUploadPrompt || showStage2PlanReviewPanel || showStage2AuditPrepPrompt ||
     showStage2RcaUploadPrompt || showStage2RcaReviewPanel || showStage2EvidencesUploadPrompt ||
-    showStage2EvidencesReviewPanel || showStage2FindingsPanel || showCdcUploadPrompt ||
+    showStage2EvidencesReviewPanel || showStage2FindingsPanel ||
+    showStage2TechFindingsRevisionPrompt || showCdcUploadPrompt ||
     showRegistrationPanel;
 
   // ── Fetch Auditor/Tech Reviewer options — needed both to populate the
@@ -160,7 +173,9 @@ export default function StageAuditActionPanel({
   // ── Nothing to show ──────────────────────────────────────────
   if (!anyVisible) {
     const anyRemarks = planClientRemarks || rcaRejectionNotes || techFinalRejectionNotes ||
-      stage2PlanClientRemarks || stage2RcaRejectionNotes || stage2EvidencesRejectionNotes;
+      techFindingsRevisionNotes ||
+      stage2PlanClientRemarks || stage2RcaRejectionNotes || stage2EvidencesRejectionNotes ||
+      stage2TechFindingsRevisionNotes;
     if (isAdmin && anyRemarks) {
       return (
         <div className="bg-red-50 border border-red-200 rounded-lg px-5 py-4 mb-4">
@@ -168,9 +183,11 @@ export default function StageAuditActionPanel({
           {planClientRemarks && <p className="text-sm text-red-800">{planClientRemarks}</p>}
           {rcaRejectionNotes && <p className="text-sm text-red-800 mt-1">{rcaRejectionNotes}</p>}
           {techFinalRejectionNotes && <p className="text-sm text-red-800 mt-1">{techFinalRejectionNotes}</p>}
+          {techFindingsRevisionNotes && <p className="text-sm text-red-800 mt-1">{techFindingsRevisionNotes}</p>}
           {stage2PlanClientRemarks && <p className="text-sm text-red-800 mt-1">{stage2PlanClientRemarks}</p>}
           {stage2RcaRejectionNotes && <p className="text-sm text-red-800 mt-1">{stage2RcaRejectionNotes}</p>}
           {stage2EvidencesRejectionNotes && <p className="text-sm text-red-800 mt-1">{stage2EvidencesRejectionNotes}</p>}
+          {stage2TechFindingsRevisionNotes && <p className="text-sm text-red-800 mt-1">{stage2TechFindingsRevisionNotes}</p>}
         </div>
       );
     }
@@ -562,6 +579,25 @@ export default function StageAuditActionPanel({
         </div>
       )}
 
+      {/* ── CRM/Auditor: Revise & Re-upload Stage 1 Report/NCR (Tech Reviewer gave findings) ── */}
+      {showTechFindingsRevisionPrompt && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">Revise Stage 1 Audit Report</p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
+              Action Required
+            </span>
+          </div>
+          {techFindingsRevisionNotes && (
+            <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              <span className="font-semibold">Tech Reviewer findings: </span>{techFindingsRevisionNotes}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Auditor: Close Stage 1 Audit ── */}
       {showClosurePanel && (
         <div className="bg-purple-50 border border-purple-200 rounded-lg px-5 py-4">
@@ -823,6 +859,25 @@ export default function StageAuditActionPanel({
                 : stage2FindingsNotes.trim() ? 'Submit Findings' : 'Accept Without Findings'}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── CRM/Auditor: Revise & Re-upload Stage 2 Report/NCR (Tech Reviewer gave findings) ── */}
+      {showStage2TechFindingsRevisionPrompt && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">Revise Stage 2 Audit Report</p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
+              Action Required
+            </span>
+          </div>
+          {stage2TechFindingsRevisionNotes && (
+            <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              <span className="font-semibold">Tech Reviewer findings: </span>{stage2TechFindingsRevisionNotes}
+            </div>
+          )}
         </div>
       )}
 
