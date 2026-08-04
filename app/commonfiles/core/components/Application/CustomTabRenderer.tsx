@@ -15,6 +15,7 @@ import YourCustomComponent from '../custom/component';
 import NewClientForm from '../custom/External_Client/NewClientForm';
 import ClientSummaryTab from '../custom/External_Client/ClientSummaryTab';
 import NewRenewalForm from '../custom/Renewal_Client/NewRenewalForm';
+import CertificateQRGenerator from '../custom/CertificateQRGenerator';
 
 interface CustomTabRendererProps {
   componentPath: string;
@@ -72,6 +73,7 @@ export default function CustomTabRenderer({
           'NewClientForm': NewClientForm,
           'ClientSummaryTab': ClientSummaryTab,
           'NewRenewalForm': NewRenewalForm,
+          'CertificateQRGenerator': CertificateQRGenerator,
           // Add more components here as needed
         };
         
