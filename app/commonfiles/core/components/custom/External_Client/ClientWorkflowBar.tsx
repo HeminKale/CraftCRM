@@ -38,7 +38,7 @@ const STAGES: WorkflowStage[] = [
   { label: 'Stage 2 Report Sent',        dateKey: '',                                 statusValue: 'Stage2_Report_Sent' },
   { label: 'Stage 2 RCA Done',           dateKey: '',                                 statusValue: 'Stage2_NCR_RCA_Uploaded' },
   { label: 'Stage 2 NCR + RCA Accepted', dateKey: 'stage2_auditor_accepted_date__a',  statusValue: 'Stage2_Auditor_Accepted' },
-  { label: 'Stage 2 Evidences Uploaded', dateKey: 'stage2_evidences_uploaded_date__a', statusValue: 'Stage2_Evidences_Uploaded' },
+  { label: 'Stage 2 Evidences Uploaded', dateKey: '', statusValue: 'Stage2_Evidences_Uploaded' },
   { label: 'Stage 2 NCR Closed',         dateKey: 'stage2_evidences_accepted_date__a', statusValue: 'Stage2_Evidences_Accepted' },
   { label: 'Stage 2 Tech Review Passed', dateKey: 'stage2_tech_findings_date__a',     statusValue: 'Stage2_Tech_Findings_Given' },
   { label: 'CDC Approved',               dateKey: 'cdc_date__a',                      statusValue: 'CDC_Approved' },
