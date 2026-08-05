@@ -8,7 +8,12 @@ import * as QRCode from 'qrcode';
 // GitHub Pages URL — QR code encodes this base URL + certificate data as query params
 const VERIFICATION_PAGE_BASE_URL = 'https://salesqr.github.io/preview/certificate_verification.html';
 
-const CERTIFICATION_BODY_OPTIONS = ['Americo', 'BQSR', 'AQSR'] as const;
+const CERTIFICATION_BODY_OPTIONS = [
+  { label: 'None', value: '' },
+  { label: 'Americo', value: 'Americo' },
+  { label: 'BQSR', value: 'BQSR' },
+  { label: 'AQSR', value: 'AQSR' },
+] as const;
 
 interface FormState {
   certificateNumber: string;
@@ -26,7 +31,7 @@ const EMPTY_FORM: FormState = {
   certificateStandard: '',
   issueDate: '',
   expiryDate: '',
-  certificationBody: CERTIFICATION_BODY_OPTIONS[0],
+  certificationBody: '',  // Default to "None" (empty string)
   accreditationBody: '',
 };
 
@@ -179,8 +184,8 @@ export default function CertificateQRGenerator({ onCancel }: CertificateQRGenera
                 className={inputClass}
               >
                 {CERTIFICATION_BODY_OPTIONS.map(opt => (
-                  <option key={opt} value={opt}>
-                    {opt}
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
                   </option>
                 ))}
               </select>
