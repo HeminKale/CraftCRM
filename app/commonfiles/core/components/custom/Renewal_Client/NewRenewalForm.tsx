@@ -18,6 +18,7 @@ interface Props {
 interface ExternalClient {
   id: string;
   label: string;
+  email: string;
 }
 
 const BUCKET = 'tenant-uploads';
@@ -32,6 +33,10 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
   const [clients, setClients]             = useState<ExternalClient[]>([]);
   const [clientId, setClientId]           = useState('');
   const [loadingClients, setLoadingClients] = useState(true);
+
+  // Email — pre-filled from the linked client when picked, always editable
+  const [email, setEmail] = useState('');
+  const [emailTouched, setEmailTouched] = useState(false);
 
   // Surveillance letter upload — optional
   const [file, setFile]         = useState<File | null>(null);
@@ -60,7 +65,7 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
           const d = r.record_data ?? r;
           const company = d.Company_name__a || d.name || 'Unknown';
           const contact = d.contactPerson__a ? ` (${d.contactPerson__a})` : '';
-          return { id: r.record_id ?? r.id, label: `${company}${contact}` };
+          return { id: r.record_id ?? r.id, label: `${company}${contact}`, email: d.email__a || '' };
         })
       );
     } catch {
@@ -69,6 +74,14 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
       setLoadingClients(false);
     }
   };
+
+  // Pre-fill email from the picked client — only while the user hasn't
+  // typed into the field themselves, so a manual override always wins.
+  useEffect(() => {
+    if (emailTouched) return;
+    const picked = clients.find(c => c.id === clientId);
+    setEmail(picked?.email || '');
+  }, [clientId, clients, emailTouched]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0] || null;
@@ -83,12 +96,14 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
       // Create the renewal record (client link optional)
       const { data, error } = await supabase.rpc('create_renewal_client', {
         p_external_client_id: clientId || null,
+        p_email: email.trim() || null,
       });
       if (error) throw error;
       const result = Array.isArray(data) ? data[0] : data;
       if (!result?.success) throw new Error(result?.message || 'Failed to create renewal');
 
       const newRecordId: string = result.record_id;
+      let letterUploaded = false;
 
       // Upload surveillance letter if provided
       if (file && objectId) {
@@ -125,6 +140,7 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
                   p_final_byte_size: file.size,
                   p_final_mime_type: file.type || null,
                 });
+                letterUploaded = true;
               }
             } else {
               toast('Letter upload failed — you can upload from the record.', { icon: '⚠️' });
@@ -137,7 +153,32 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
         }
       }
 
-      toast.success('Renewal record created');
+      toast.success('Surveillance 1 record created');
+
+      // Notify the client by email — best-effort, never blocks record
+      // creation (same soft-failure philosophy as the letter upload above).
+      if (email.trim()) {
+        try {
+          const selectedClient = clients.find(c => c.id === clientId);
+          const companyLabel = selectedClient?.label || undefined;
+          const res = await fetch('/api/notifications/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: email.trim(),
+              template: 'surveillance_intimation',
+              data: { companyName: companyLabel, hasLetter: letterUploaded },
+            }),
+          });
+          const notifyResult = await res.json().catch(() => null);
+          if (!notifyResult?.success) {
+            toast('Record created, but the notification email was not sent.', { icon: '⚠️' });
+          }
+        } catch {
+          toast('Record created, but the notification email was not sent.', { icon: '⚠️' });
+        }
+      }
+
       onSuccess?.();
     } catch (err: any) {
       toast.error(err.message || 'Failed to create renewal');
@@ -150,7 +191,7 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
     <div className="bg-white p-2">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">New Renewal</h2>
+          <h2 className="text-xl font-semibold text-gray-900">New Surveillance 1</h2>
           <p className="text-sm text-gray-500 mt-1">
             Optionally link to an existing client and upload the surveillance intimation letter.
           </p>
@@ -205,7 +246,21 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
           </div>
         </div>
 
-        {/* Row 2: Surveillance Intimation Letter upload */}
+        {/* Row 2: Email — pre-filled from the picked client, always editable */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Email <span className="text-gray-400 font-normal">(optional — used to notify on create)</span>
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={e => { setEmail(e.target.value); setEmailTouched(true); }}
+            placeholder="client@example.com"
+            className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+
+        {/* Row 3: Surveillance Intimation Letter upload */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Surveillance Intimation Letter <span className="text-gray-400 font-normal">(optional)</span>
@@ -272,7 +327,7 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
                 </svg>
                 Creating...
               </>
-            ) : 'Create Renewal'}
+            ) : 'Create Surveillance 1'}
           </button>
         </div>
       </form>

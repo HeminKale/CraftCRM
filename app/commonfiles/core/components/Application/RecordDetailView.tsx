@@ -110,18 +110,36 @@ const STAGE_STATUS_ORDER: string[] = [
   'Stage2_Closed', 'Stage2_Complete', 'CDC_Approved',
 ];
 
-const STAGE_REPORT_UNLOCK_AT: Record<string, string> = {
-  stage1_report: 'Stage1_Tech_Findings_Given',
-  stage2_report: 'Stage2_Tech_Findings_Given',
+// Surveillance 1 (renewal_clients__a) — Sprint 4 audit fix (SURV1 rights
+// matrix row 9: "surv audit report — view only after tech review
+// acceptance"). Kept as its OWN array rather than appended to
+// STAGE_STATUS_ORDER above: 'Team_Assigned' and 'CDC_Approved' are real
+// status__a values on BOTH objects (External Client's own picklist already
+// contains both), so a shared array would have silently ranked Surveillance
+// 1's 'Team_Assigned' at External Client's position for that name instead
+// of its own — accidentally harmless for this one threshold check today,
+// but a landmine for the next one. Two independent arrays, keyed by their
+// own object's field, avoids the collision entirely.
+const SURV_STATUS_ORDER: string[] = [
+  'Intimation_Sent', 'Intimation_Accepted', 'Team_Assigned',
+  'Surv_Plan_Sent', 'Surv_Plan_Accepted', 'Surv_NCR_Sent', 'Surv_NCR_RCA_Uploaded',
+  'Surv_Auditor_Accepted', 'Surv_Report_Sent', 'Surv_Tech_Findings_Given',
+  'Surv_Closed', 'CDC_Approved', 'Certificate_Issued',
+];
+
+const STAGE_REPORT_UNLOCK_AT: Record<string, { order: string[]; unlockAt: string }> = {
+  stage1_report:             { order: STAGE_STATUS_ORDER, unlockAt: 'Stage1_Tech_Findings_Given' },
+  stage2_report:             { order: STAGE_STATUS_ORDER, unlockAt: 'Stage2_Tech_Findings_Given' },
+  surveillance_audit_report: { order: SURV_STATUS_ORDER,  unlockAt: 'Surv_Tech_Findings_Given' },
 };
 
 const isStageReportLockedForClient = (fieldName: string, recordData: RecordData | null, currentUserId?: string): boolean => {
-  const unlockAt = STAGE_REPORT_UNLOCK_AT[fieldName];
-  if (!unlockAt) return false;
+  const rule = STAGE_REPORT_UNLOCK_AT[fieldName];
+  if (!rule) return false;
   if (!currentUserId || recordData?.['client_user_id__a'] !== currentUserId) return false;
   const status = recordData?.['status__a'];
-  const currentRank = status ? STAGE_STATUS_ORDER.indexOf(status) : -1;
-  const unlockRank = STAGE_STATUS_ORDER.indexOf(unlockAt);
+  const currentRank = status ? rule.order.indexOf(status) : -1;
+  const unlockRank = rule.order.indexOf(rule.unlockAt);
   return currentRank < unlockRank; // unknown/unranked status defaults to locked
 };
 
@@ -134,7 +152,16 @@ const isStageReportLockedForClient = (fieldName: string, recordData: RecordData 
 // straight through the generic Page Layout form, bypassing the rights
 // matrix's upload-role column entirely. A Permission Set `can_edit=false`
 // can still narrow this further; it just can never widen past it.
-const FILE_FIELD_UPLOAD_ROLE: Record<string, 'crm_or_auditor' | 'client_only'> = {
+type FileUploadRule = 'crm_or_auditor' | 'client_only' | 'crm_only' | 'tech_only' | 'cdc_only';
+
+// External Client (external_clients__a) — untouched since it was first added.
+// Kept as its own map, not shared with Surveillance 1 below: 'cdc_report' is
+// a field name used by BOTH objects, and a single shared map briefly (Sprint
+// 4) applied Surveillance 1's stricter cdc_report rule to External Client's
+// too as an unintended side effect. Split back out per explicit instruction
+// not to touch the External Client flow — this map's contents are exactly
+// what they were before Sprint 4 ever ran.
+const EXTERNAL_CLIENT_FILE_FIELD_UPLOAD_ROLE: Record<string, FileUploadRule> = {
   stage_one_audit_plan: 'crm_or_auditor',
   Stage_two_audit_plan: 'crm_or_auditor',
   stage1_report:        'crm_or_auditor',
@@ -146,14 +173,32 @@ const FILE_FIELD_UPLOAD_ROLE: Record<string, 'crm_or_auditor' | 'client_only'> =
   stage2_evidences:     'client_only',
 };
 
+// Surveillance 1 (renewal_clients__a) — Sprint 4. Server-side twin lives in
+// supabase/migrations/261_surv_start_upload_role_gates.sql; this is the
+// matching frontend hard floor (PS `can_edit` alone can't stop a direct RPC
+// call — see that migration's header for the full reasoning). Entirely
+// separate map from External Client's above — selected by object identity
+// at the call site, never merged.
+const RENEWAL_FILE_FIELD_UPLOAD_ROLE: Record<string, FileUploadRule> = {
+  surveillance_intimation_letter: 'crm_only',
+  surveillance_certificates:      'crm_only',
+  surv_audit_plan:                'crm_or_auditor',
+  surv_ncr:                       'crm_or_auditor',
+  surveillance_audit_report:      'crm_or_auditor',
+  surv_ncr_rca:                   'client_only',
+  surv_tech_findings_file:        'tech_only',
+  cdc_report:                     'cdc_only',
+};
+
 const isFileUploadAllowedForRole = (
   fieldName: string,
   recordData: RecordData | null,
   currentUserId: string | undefined,
   userRole: string | undefined,
   customRoleName: string | null,
+  isRenewalObject: boolean,
 ): boolean => {
-  const rule = FILE_FIELD_UPLOAD_ROLE[fieldName];
+  const rule = (isRenewalObject ? RENEWAL_FILE_FIELD_UPLOAD_ROLE : EXTERNAL_CLIENT_FILE_FIELD_UPLOAD_ROLE)[fieldName];
   if (!rule) return true; // not one of the hard-floored fields — Permission Set decides alone
 
   if (userRole === 'admin') return true;
@@ -163,7 +208,10 @@ const isFileUploadAllowedForRole = (
   }
 
   const role = (customRoleName || '').toLowerCase();
-  return role.includes('crm') || role.includes('auditor');
+  if (rule === 'crm_only')  return role.includes('crm');
+  if (rule === 'tech_only') return role.includes('tech');
+  if (rule === 'cdc_only')  return role.includes('cdc');
+  return role.includes('crm') || role.includes('auditor'); // 'crm_or_auditor'
 };
 
 // Helper function to normalize field names by removing __a suffix
@@ -1418,7 +1466,7 @@ export default function RecordDetailView({
                                           multiple={field.type === 'files'}
                                           readOnly={
                                             !can('edit', 'field', field.id) ||
-                                            !isFileUploadAllowedForRole(field.name, recordData, user?.id, userProfile?.role, customRoleName)
+                                            !isFileUploadAllowedForRole(field.name, recordData, user?.id, userProfile?.role, customRoleName, objectLabel?.toLowerCase().includes('renewal') ?? false)
                                           }
                                           companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
                                           onUploadComplete={() => setRefreshKey(k => k + 1)}
