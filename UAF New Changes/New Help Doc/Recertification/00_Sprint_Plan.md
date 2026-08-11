@@ -1,5 +1,14 @@
 # Recertification — Sprint Plan
 
+**Status: Sprint 0 and Sprint 1 built.** Migrations
+`supabase/migrations/264_recertification_table_and_intimation.sql` (Sprint 0)
+and `supabase/migrations/265_recertification_intake.sql` (Sprint 1), plus
+`NewRecertificationForm.tsx` (registered in `CustomTabRenderer.tsx`) and the
+`recertification_intimation` template in `app/api/notifications/send/route.ts`.
+Not yet run against a live database or QA'd — Sprints 2-7 remain unbuilt. Page
+Layout placement (your side) still needed before the new fields are visible
+in the UI, same as both prior epics.
+
 A third parallel workflow object alongside New Client (`external_clients__a`) and
 Surveillance 1 (`renewal_clients__a`). Confirmed this session: **new table**
 `tenant.recertification_clients__a`, linked back to the original client via

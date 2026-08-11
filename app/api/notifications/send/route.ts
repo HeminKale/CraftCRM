@@ -40,6 +40,24 @@ const TEMPLATES: Record<string, TemplateBuilder> = {
       `,
     };
   },
+
+  // Recertification Sprint 0 — see
+  // UAF New Changes/New Help Doc/Recertification/00_Sprint_Plan.md
+  recertification_intimation: (data) => {
+    const company = data.companyName || 'your organization';
+    return {
+      subject: `Recertification Audit Intimation — ${company}`,
+      html: `
+        <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
+        <p>This is to inform you that a recertification audit record has been created for
+        <strong>${company}</strong>. ${data.hasLetter
+          ? 'The recertification intimation letter has been attached to your record.'
+          : 'The recertification intimation letter will follow shortly.'}</p>
+        <p>Please log in to your portal to review and respond.</p>
+        <p>Regards,<br/>TWE Recertification Team</p>
+      `,
+    };
+  },
 };
 
 export async function POST(req: NextRequest) {
