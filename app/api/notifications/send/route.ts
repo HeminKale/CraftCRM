@@ -42,6 +42,71 @@ const TEMPLATES: Record<string, TemplateBuilder> = {
     };
   },
 
+  // Surveillance 1 Sprint 8 — see
+  // UAF New Changes/New Help Doc/Renewal/Sprints/00_Sprint_Plan.md, Sprint 8.
+  // Four templates, one per CRM-uploaded checkpoint (the two CDC-uploaded
+  // decision fields never trigger an email, confirmed — only rows with
+  // "get email" in the Client column of the rights matrix send mail).
+  surveillance_suspension_intimation: (data) => {
+    const company = data.companyName || 'your organization';
+    return {
+      subject: `Surveillance Suspension Intimation — ${company}`,
+      html: `
+        <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
+        <p>This is to inform you of a surveillance suspension intimation for
+        <strong>${company}</strong>.</p>
+        <p><strong>The suspension intimation letter is attached to this email.</strong></p>
+        <p>Please log in to your portal to review.</p>
+        <p>Regards,<br/>TWE Surveillance Team</p>
+      `,
+    };
+  },
+
+  surveillance_suspension_letter: (data) => {
+    const company = data.companyName || 'your organization';
+    return {
+      subject: `Surveillance Suspension Letter — ${company}`,
+      html: `
+        <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
+        <p>This is to inform you that a surveillance suspension letter has been issued for
+        <strong>${company}</strong>.</p>
+        <p><strong>The suspension letter is attached to this email.</strong></p>
+        <p>Please log in to your portal to review.</p>
+        <p>Regards,<br/>TWE Surveillance Team</p>
+      `,
+    };
+  },
+
+  surveillance_withdrawal_intimation: (data) => {
+    const company = data.companyName || 'your organization';
+    return {
+      subject: `Surveillance Withdrawal Intimation — ${company}`,
+      html: `
+        <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
+        <p>This is to inform you of a surveillance withdrawal intimation for
+        <strong>${company}</strong>.</p>
+        <p><strong>The withdrawal intimation letter is attached to this email.</strong></p>
+        <p>Please log in to your portal to review.</p>
+        <p>Regards,<br/>TWE Surveillance Team</p>
+      `,
+    };
+  },
+
+  surveillance_withdrawal_letter: (data) => {
+    const company = data.companyName || 'your organization';
+    return {
+      subject: `Surveillance Withdrawal Letter — ${company}`,
+      html: `
+        <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
+        <p>This is to inform you that a surveillance withdrawal letter has been issued for
+        <strong>${company}</strong>.</p>
+        <p><strong>The withdrawal letter is attached to this email.</strong></p>
+        <p>Please log in to your portal to review.</p>
+        <p>Regards,<br/>TWE Surveillance Team</p>
+      `,
+    };
+  },
+
   // Recertification Sprint 0 — see
   // UAF New Changes/New Help Doc/Recertification/00_Sprint_Plan.md
   recertification_intimation: (data) => {

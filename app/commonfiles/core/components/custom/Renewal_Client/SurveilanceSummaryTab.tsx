@@ -31,11 +31,12 @@ interface Props {
 const ROWS: { key: string; label: string; type: 'text' | 'date'; readonly: boolean }[] = [
   // Identity / contact — mirrors ClientSummaryTab's first block
   { key: 'company_name__a',            label: 'Company Name',              type: 'text', readonly: true  },
+  { key: 'address__a',                 label: 'Address',                   type: 'text', readonly: false },
   { key: 'contact_person__a',          label: 'Contact Person',            type: 'text', readonly: false },
   { key: 'email__a',                   label: 'Email',                     type: 'text', readonly: false },
   { key: 'iso_standards__a',           label: 'ISO Standards',             type: 'text', readonly: false },
 
-  // Metadata fields — migration 271 (Sprint 7)
+  // Metadata fields — migration 271 (Sprint 7) + 275 (address/CDC name fix-up)
   { key: 'certificate_no__a',          label: 'Certificate No',            type: 'text', readonly: false },
   { key: 'country__a',                 label: 'Country',                   type: 'text', readonly: false },
   { key: 'scope__a',                   label: 'Scope',                     type: 'text', readonly: false },
@@ -44,6 +45,7 @@ const ROWS: { key: string; label: string; type: 'text' | 'date'; readonly: boole
   { key: 'surv_mandays__a',            label: 'Surveillance Mandays',      type: 'text', readonly: false },
   { key: 'auditor_name__a',            label: 'Auditor Name',              type: 'text', readonly: false },
   { key: 'tech_reviewer_name__a',      label: 'Tech Reviewer Name',        type: 'text', readonly: false },
+  { key: 'cdc_name__a',                label: 'CDC Name',                  type: 'text', readonly: false },
   { key: 'director_name__a',           label: 'Director Name',             type: 'text', readonly: false },
   { key: 'auditor_team__a',            label: 'Auditor Team',              type: 'text', readonly: false },
   { key: 'application_reviewer__a',    label: 'Application Reviewer',      type: 'text', readonly: false },

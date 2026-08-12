@@ -115,12 +115,28 @@ export default function RenewalActionPanel({
   const showCdcUploadPrompt  = isCdc && status === 'Surv_Closed';
   const showCertificatePrompt = isCRM && status === 'CDC_Approved';
 
+  // ── Sprint 8: Suspension & Withdrawal. Every one of these six rows is
+  // "upload IS the action" — no accept/reject buttons, just an instructional
+  // banner telling the uploading role to use the file field below, same
+  // shape as showCdcUploadPrompt/showCertificatePrompt above. Strictly
+  // linear sequencing, confirmed (00_Sprint_Plan.md Sprint 8) — each prompt
+  // requires exactly the prior checkpoint's status, matching the RPC-level
+  // gate in migration 278.
+  const showSuspensionIntimationPrompt = isCRM && status === 'Certificate_Issued';
+  const showSuspensionDecisionPrompt   = isCdc && status === 'Suspension_Intimation_Sent';
+  const showSuspensionLetterPrompt     = isCRM && status === 'Suspension_Decision_Uploaded';
+  const showWithdrawalIntimationPrompt = isCRM && status === 'Suspension_Letter_Sent';
+  const showWithdrawalDecisionPrompt   = isCdc && status === 'Withdrawal_Intimation_Sent';
+  const showWithdrawalLetterPrompt     = isCRM && status === 'Withdrawal_Decision_Uploaded';
+
   const anyVisible = showIntimationPrompt || showIntimationReview ||
     showAssignTeamPrompt || showAssignedTeamInfo ||
     showPlanUploadPrompt || showPlanReviewPanel || showAuditPrepPrompt ||
     showRcaUploadPrompt || showRcaReviewPanel ||
     showReportPrompt || showFindingsPanel || showClosurePanel ||
-    showCdcUploadPrompt || showCertificatePrompt;
+    showCdcUploadPrompt || showCertificatePrompt ||
+    showSuspensionIntimationPrompt || showSuspensionDecisionPrompt || showSuspensionLetterPrompt ||
+    showWithdrawalIntimationPrompt || showWithdrawalDecisionPrompt || showWithdrawalLetterPrompt;
 
   // ── Fetch Auditor/Tech Reviewer options — must run unconditionally,
   // before the "nothing to show" early return below, so hook count never
@@ -609,7 +625,7 @@ export default function RenewalActionPanel({
         </div>
       )}
 
-      {/* ── CRM: Issue Certificate (terminal step for this plan) ── */}
+      {/* ── CRM: Issue Certificate ── */}
       {showCertificatePrompt && (
         <div className="bg-green-50 border border-green-200 rounded-lg px-5 py-4">
           <div className="flex items-start justify-between">
@@ -620,6 +636,111 @@ export default function RenewalActionPanel({
               </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 shrink-0 ml-3">
+              Action Required
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sprint 8: Suspension & Withdrawal — every row is "upload IS the
+          action," same instructional-banner shape as the two above. ── */}
+
+      {/* ── CRM: Suspension Intimation ── */}
+      {showSuspensionIntimationPrompt && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-yellow-900">Upload Suspension Intimation</p>
+              <p className="text-xs text-yellow-600 mt-0.5">
+                Upload the <strong>Suspension Intimation</strong> letter using the field below. The client will be emailed the file automatically.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 shrink-0 ml-3">
+              Action Required
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── CDC: Suspension Decision (upload IS the decision) ── */}
+      {showSuspensionDecisionPrompt && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">Upload Suspension Decision</p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                Upload the <strong>Suspension Decision</strong> document using the field below.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
+              Action Required
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── CRM: Suspension Letter ── */}
+      {showSuspensionLetterPrompt && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-yellow-900">Upload Suspension Letter</p>
+              <p className="text-xs text-yellow-600 mt-0.5">
+                Upload the <strong>Suspension Letter</strong> using the field below. The client will be emailed the file automatically.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 shrink-0 ml-3">
+              Action Required
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── CRM: Withdrawal Intimation ── */}
+      {showWithdrawalIntimationPrompt && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-red-900">Upload Withdrawal Intimation</p>
+              <p className="text-xs text-red-600 mt-0.5">
+                Upload the <strong>Withdrawal Intimation</strong> letter using the field below. The client will be emailed the file automatically.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 shrink-0 ml-3">
+              Action Required
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── CDC: Withdrawal Decision (upload IS the decision) ── */}
+      {showWithdrawalDecisionPrompt && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">Upload Withdrawal Decision</p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                Upload the <strong>Withdrawal Decision</strong> document using the field below.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
+              Action Required
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── CRM: Withdrawal Letter (terminal checkpoint) ── */}
+      {showWithdrawalLetterPrompt && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-red-900">Upload Withdrawal Letter</p>
+              <p className="text-xs text-red-600 mt-0.5">
+                Upload the <strong>Withdrawal Letter</strong> using the field below. The client will be emailed the file automatically.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 shrink-0 ml-3">
               Final Step
             </span>
           </div>

@@ -389,6 +389,9 @@ shows, not by the RPC itself.
 
 ## Sprint 8 — Suspension & Withdrawal Chain
 
+**✅ Built.** `npx tsc --noEmit` clean. Migrations 277–280 written, not yet
+applied. Full build record: [`Sprint_8.md`](Sprint_8.md).
+
 **Un-deferred.** The six rights-matrix rows after Certificate Issue (`suspension
 intimation` → `withdrawal letter`) were explicitly out of scope through Sprint 6.
 This sprint picks them back up, confirmed against a fresh read of the matrix.

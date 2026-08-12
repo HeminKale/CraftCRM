@@ -7,7 +7,7 @@ import { usePermissions } from '../../providers/PermissionsProvider';
 import { UniversalFieldDisplay, formatColumnLabel } from '../ui/UniversalFieldDisplay';
 import CustomTabRenderer from './CustomTabRenderer';
 import { draftToClientService } from '../../services/DraftToClientService';
-import FileUploadField from './FileUploadField';
+import FileUploadField, { type UploadedFileInfo } from './FileUploadField';
 import ClientWorkflowBar from '../custom/External_Client/ClientWorkflowBar';
 import ReviewActionPanel from '../custom/External_Client/ReviewActionPanel';
 import StageAuditActionPanel from '../custom/External_Client/StageAuditActionPanel';
@@ -212,6 +212,26 @@ const RENEWAL_FILE_FIELD_UPLOAD_ROLE: Record<string, FileUploadRule> = {
   surv_ncr_rca:                   'client_only',
   surv_tech_findings_file:        'tech_only',
   cdc_report:                     'cdc_only',
+  // Sprint 8 — Suspension & Withdrawal. Server-side twin lives in
+  // supabase/migrations/278_surv_suspension_withdrawal_start_upload.sql.
+  surv_suspension_intimation:     'crm_only',
+  surv_suspension_decision:       'cdc_only',
+  surv_suspension_letter:         'crm_only',
+  surv_withdrawal_intimation:     'crm_only',
+  surv_withdrawal_decision:       'cdc_only',
+  surv_withdrawal_letter:         'crm_only',
+};
+
+// Sprint 8 — the four CRM-uploaded fields whose upload triggers an email to
+// the linked client (the two CDC-uploaded decision fields never trigger an
+// email, confirmed — only rows with "get email" in the Client column of the
+// rights matrix send mail). Field name → the notifications/send template
+// name (see app/api/notifications/send/route.ts).
+const RENEWAL_EMAIL_ON_UPLOAD_FIELDS: Record<string, string> = {
+  surv_suspension_intimation: 'surveillance_suspension_intimation',
+  surv_suspension_letter:     'surveillance_suspension_letter',
+  surv_withdrawal_intimation: 'surveillance_withdrawal_intimation',
+  surv_withdrawal_letter:     'surveillance_withdrawal_letter',
 };
 
 // Recertification (recertification_clients__a) — Sprint 5. Server-side twin
@@ -1093,6 +1113,16 @@ export default function RecordDetailView({
 
   // Format field value for display
   const formatFieldValue = (value: any, fieldType: string, fieldName?: string): string => {
+    // Date/timestamptz: show a placeholder date format instead of "-" when
+    // empty, and never "Invalid Date" — new Date('') doesn't throw, so the
+    // old try/catch below never caught it and .toLocaleDateString() on an
+    // Invalid Date literally returns the string "Invalid Date".
+    if (fieldType === 'date' || fieldType === 'timestamptz') {
+      if (value === null || value === undefined || value === '') return 'm/d/yyyy';
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? 'm/d/yyyy' : d.toLocaleDateString();
+    }
+
     if (value === null || value === undefined) return '-';
 
     // Resolve user UUID → display name for audit, owner, and user-lookup fields
@@ -1106,9 +1136,6 @@ export default function RecordDetailView({
     switch (fieldType) {
       case 'boolean':
         return value ? 'Yes' : 'No';
-      case 'date':
-      case 'timestamptz':
-        try { return new Date(value).toLocaleDateString(); } catch { return String(value); }
       case 'decimal':
       case 'money':
         return typeof value === 'number' ? value.toLocaleString() : value;
@@ -1124,6 +1151,52 @@ export default function RecordDetailView({
       }
       default:
         return String(value);
+    }
+  };
+
+  // Sprint 8 — fires a "get email" notification when one of the four
+  // CRM-uploaded Suspension/Withdrawal fields is uploaded on a renewal
+  // record. Called from every FileUploadField's onUploadComplete on this
+  // page; safe to call for any object/field — it's a no-op unless
+  // isRenewalObject is true AND the field is in RENEWAL_EMAIL_ON_UPLOAD_FIELDS.
+  // Same soft-failure philosophy as every other notification in this epic:
+  // failure is a toast warning only, never blocks the upload that already
+  // succeeded by the time this runs.
+  const maybeSendRenewalUploadEmail = async (info?: UploadedFileInfo) => {
+    if (!info) return;
+    const isRenewalObject = objectLabel?.toLowerCase().includes('renewal') ?? false;
+    if (!isRenewalObject) return;
+
+    const template = RENEWAL_EMAIL_ON_UPLOAD_FIELDS[info.fieldName];
+    if (!template) return; // not one of the four email-triggering fields
+
+    const recipient = recordData?.['email__a'];
+    if (!recipient) return; // no email on file for this record — nothing to send to
+
+    try {
+      const { data: signedData, error: signErr } = await supabase.storage
+        .from(info.bucket)
+        .createSignedUrl(info.path, 300); // 5 min — just enough for the API route to fetch it
+      if (signErr || !signedData?.signedUrl) return;
+
+      const companyLabel = recordData?.['company_name__a'] || recordData?.['name'] || undefined;
+
+      const res = await fetch('/api/notifications/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: recipient,
+          template,
+          data: { companyName: companyLabel },
+          attachmentUrl: signedData.signedUrl,
+        }),
+      });
+      const result = await res.json().catch(() => null);
+      if (!result?.success) {
+        toast('File uploaded, but the notification email was not sent.', { icon: '⚠️' });
+      }
+    } catch {
+      toast('File uploaded, but the notification email was not sent.', { icon: '⚠️' });
     }
   };
 
@@ -1265,11 +1338,12 @@ export default function RecordDetailView({
         <FileUploadField
           objectId={objectId}
           fieldId={field.id}
+          fieldName={field.name}
           fieldLabel={field.label}
           recordId={recordId}
           multiple={field.type === 'files'}
           companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
-          onUploadComplete={() => setRefreshKey(k => k + 1)}
+          onUploadComplete={(info) => { setRefreshKey(k => k + 1); maybeSendRenewalUploadEmail(info); }}
         />
       );
     }
@@ -1513,6 +1587,7 @@ export default function RecordDetailView({
                                         <FileUploadField
                                           objectId={objectId}
                                           fieldId={field.id}
+                                          fieldName={field.name}
                                           fieldLabel={field.label}
                                           recordId={recordId}
                                           multiple={field.type === 'files'}
@@ -1525,7 +1600,7 @@ export default function RecordDetailView({
                                             )
                                           }
                                           companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
-                                          onUploadComplete={() => setRefreshKey(k => k + 1)}
+                                          onUploadComplete={(info) => { setRefreshKey(k => k + 1); maybeSendRenewalUploadEmail(info); }}
                                         />
                                       )
                                     ) : isEditing && can('edit', 'field', field.id) ? (

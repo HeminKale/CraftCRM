@@ -12,6 +12,7 @@ import { RecordList, FilterCriteria, FilterFieldInfo } from './RecordList/types'
 import { FilterBuilder } from './RecordList/FilterBuilder';
 import { UniversalFieldDisplay, formatColumnLabel } from '../ui/UniversalFieldDisplay';
 import { useUserMap, resolveUserValue } from '../../hooks/useUserMap';
+import { useCurrentApp } from '../../hooks/useCurrentApp';
 import CustomTabRenderer from './CustomTabRenderer';
 import * as XLSX from 'xlsx';
 import { draftToClientService } from '../../services/DraftToClientService';
@@ -151,6 +152,7 @@ export default function TabContent({
  
   const { tenant, user } = useSupabase();
   const supabase = createClientComponentClient();
+  const { selectedApp } = useCurrentApp();
   const userMap = useUserMap();
 
   // Re-resolve created_by / updated_by whenever records or userMap changes.
@@ -1052,7 +1054,8 @@ export default function TabContent({
           p_object_id: objectId,
           p_tenant_id: tenant?.id,
           p_limit: 100,
-          p_offset: 0
+          p_offset: 0,
+          p_certification_body: selectedApp?.name || null
         });
 
       if (fetchError) {
@@ -1513,7 +1516,8 @@ export default function TabContent({
                                 p_object_id: objectId,
                                 p_tenant_id: tenant?.id,
                                 p_limit: 100,
-                                p_offset: 0
+                                p_offset: 0,
+                                p_certification_body: selectedApp?.name || null
                               });
 
                             if (recordsError) {

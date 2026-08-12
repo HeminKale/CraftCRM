@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useSupabase } from '../../../providers/SupabaseProvider';
+import { useCurrentApp } from '../../../hooks/useCurrentApp';
 import toast from 'react-hot-toast';
 
 interface Props {
@@ -26,6 +27,7 @@ const BUCKET = 'tenant-uploads';
 export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel }: Props) {
   const supabase = createClientComponentClient();
   const { tenant } = useSupabase();
+  const { selectedApp } = useCurrentApp();
 
   const [date] = useState(() => new Date().toISOString().split('T')[0]);
 
@@ -97,6 +99,7 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
       const { data, error } = await supabase.rpc('create_renewal_client', {
         p_external_client_id: clientId || null,
         p_email: email.trim() || null,
+        p_certification_body: selectedApp?.name || null,
       });
       if (error) throw error;
       const result = Array.isArray(data) ? data[0] : data;

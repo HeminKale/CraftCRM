@@ -13,9 +13,10 @@ interface WorkflowStage {
 // Single unified pipeline — one dot per status__a value, in order. Mirrors
 // ClientWorkflowBar.tsx's pattern (External Client epic): this array is the
 // display-side mirror of the status__a picklist registered in migrations
-// 257/258/260, same values/order, so the edit-mode dropdown and this bar
-// never disagree. Built through Certificate Issue only — Suspension/
-// Withdrawal are out of scope for this plan (see 00_Sprint_Plan.md).
+// 257/258/260/277, same values/order, so the edit-mode dropdown and this bar
+// never disagree. Extended through Withdrawal Letter Sent as of Sprint 8
+// (migration 277) — Suspension/Withdrawal were out of scope through Sprint 6
+// but are now built (see 00_Sprint_Plan.md, Sprint 8).
 //
 // The pre-epic legacy statuses (Audit_Plan_Sent, Audit_Plan_Accepted,
 // Renewal_Complete — registered for history in migration 257) are
@@ -36,6 +37,13 @@ const STAGES: WorkflowStage[] = [
   { label: 'Audit Closed',           dateKey: 'surv_closed_date__a',             statusValue: 'Surv_Closed'            },
   { label: 'CDC Approved',           dateKey: 'cdc_date__a',                     statusValue: 'CDC_Approved'           },
   { label: 'Certificate Issued',     dateKey: 'certificates_sent_date__a',       statusValue: 'Certificate_Issued'     },
+  // Sprint 8 — Suspension & Withdrawal (migration 277)
+  { label: 'Suspension Intimation',  dateKey: 'surv_suspension_intimation_date__a', statusValue: 'Suspension_Intimation_Sent'   },
+  { label: 'Suspension Decision',    dateKey: 'surv_suspension_decision_date__a',   statusValue: 'Suspension_Decision_Uploaded' },
+  { label: 'Suspension Letter',      dateKey: 'surv_suspension_letter_date__a',     statusValue: 'Suspension_Letter_Sent'       },
+  { label: 'Withdrawal Intimation',  dateKey: 'surv_withdrawal_intimation_date__a', statusValue: 'Withdrawal_Intimation_Sent'   },
+  { label: 'Withdrawal Decision',    dateKey: 'surv_withdrawal_decision_date__a',   statusValue: 'Withdrawal_Decision_Uploaded' },
+  { label: 'Withdrawal Letter',      dateKey: 'surv_withdrawal_letter_date__a',     statusValue: 'Withdrawal_Letter_Sent'       },
 ];
 
 // How many stages to show either side of the current one when the full list

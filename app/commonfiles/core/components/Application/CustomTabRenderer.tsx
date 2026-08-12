@@ -15,6 +15,7 @@ import YourCustomComponent from '../custom/component';
 import NewClientForm from '../custom/External_Client/NewClientForm';
 import ClientSummaryTab from '../custom/External_Client/ClientSummaryTab';
 import NewRenewalForm from '../custom/Renewal_Client/NewRenewalForm';
+import SurveilanceSummaryTab from '../custom/Renewal_Client/SurveilanceSummaryTab';
 import NewRecertificationForm from '../custom/Recertification_Client/NewRecertificationForm';
 import RecertificationSummaryTab from '../custom/Recertification_Client/RecertificationSummaryTab';
 import CertificateQRGenerator from '../custom/CertificateQRGenerator';
@@ -75,6 +76,7 @@ export default function CustomTabRenderer({
           'NewClientForm': NewClientForm,
           'ClientSummaryTab': ClientSummaryTab,
           'NewRenewalForm': NewRenewalForm,
+          'SurveilanceSummaryTab': SurveilanceSummaryTab,
           'NewRecertificationForm': NewRecertificationForm,
           'RecertificationSummaryTab': RecertificationSummaryTab,
           'CertificateQRGenerator': CertificateQRGenerator,

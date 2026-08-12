@@ -506,3 +506,89 @@ session (no local Node/TS toolchain check performed) — recommend running it
 before wiring the tab in, given three signature bugs were just found by
 inspection alone.
 
+---
+
+## §12 — Mapping re-verified against the real sample sheet, 4 more bugs found and fixed (addendum, same session)
+
+User asked directly: "have we made mapping correct for each of summary field? Do
+you want to look at summary sheet again?" — good call. Re-checked every column
+in the actual sample (`Surv 1 SUmmary.csv`, not just the rights-matrix labels
+§11 and earlier sections were built against) line-by-line against
+`surveilanceSheetMapping.ts`. Found and fixed four real problems.
+
+### 1. `ADDRESS` was silently corrupting `company_name__a` — confirmed bug, not a judgment call
+
+`'address'` was mapped to `extColumn: 'company_name__a'` — there was no address
+column on `renewal_clients__a` at all, so importing a sheet with an ADDRESS
+value would have overwritten the company name with the address text on every
+import, silently. **Fixed:** new `address__a` column (migration 275), mapping
+corrected.
+
+### 2. Two distinct team-column sets in the sheet, only one was being read
+
+The sheet has `Auditor Stg 1` / `Auditor Stg 2` / `Tech Reviewer` / `lead
+auditor` (the client's **original certification** team — historical) **and
+separately** `surv audit date` / `surv auditor` / `surv LA` / `surv Tech
+reviewer` / `surv CDC` (**this surveillance visit's own** team). The mapping had
+been pulling the historical Stage-1 columns into `auditor_name__a` /
+`tech_reviewer_name__a` — the wrong source — and never read the `surv `-prefixed
+columns at all. `surv CDC` had no field to hold it even if it had been read.
+
+Confirmed via direct question, user's answer: **"Yes, use the surv_prefixed
+columns and do not touch the other flows like new client etc."** — i.e. keep
+this scoped to Surveillance 1's own mapping file only, consistent with the
+standing "Do NOT edit new client flow" rule.
+
+**Fixed:**
+- `surv auditor` → `auditor_name__a`, `surv LA` → `lead_auditor__a`, `surv Tech
+  reviewer` → `tech_reviewer_name__a` (source swapped)
+- `Auditor Stg 1`/`Auditor Stg 2`/generic `Tech Reviewer`/generic `lead
+  auditor` are no longer recognized by this file at all — not a silent no-op,
+  genuinely absent from the dictionary, same treatment External Client gives
+  its own restated wide-table columns (§9b there)
+- `surv audit date` now maps to the existing (migration 221) TEXT column
+  `surveillance_audit_date__a` — that column existed since the very first
+  Renewal migration but nothing ever imported into it until now
+- New column `cdc_name__a` (migration 275) + mapping from `surv CDC`
+
+### 3. `total mandays` vs `Surveillance 1 mandays` — confirmed same figure
+
+User confirmed: same value. Added `'total mandays'` as an additional label
+pointing at the same `surv_mandays__a` column — no new field.
+
+### 4. Three vertical-list labels didn't match the real sheet's actual text
+
+| Sheet's real label | Old coded label | Effect before fix |
+|---|---|---|
+| `acceptance by client` | `intimation acceptance` | Row silently skipped every import |
+| `assign team` | `team assigned` | Row silently skipped every import |
+| `surv  ncr RCA acceptance` *(double space)* | `surv ncr rca acceptance` *(single space)* | Row silently skipped every import |
+
+**Fixed:** the real observed labels are now the primary dictionary keys; the
+old guessed labels are kept as additive aliases (same convention already used
+elsewhere in this file for typo/relabel variants). Also added a
+`normalizeLabel()` helper that collapses any run of whitespace to a single
+space before every dictionary lookup, in both the wide-table and vertical
+passes — cheap insurance against the *next* stray double-space typo, not just
+this one.
+
+### Migration 275 — `275_surv_address_cdc_name_fields.sql`
+
+Two new columns only: `address__a`, `cdc_name__a`. Registered at
+`display_order` 65/66, **not** 53/54 — Sprint 8's plan (§ suspension/withdrawal,
+`00_Sprint_Plan.md`) already reserves 53–64 for its own 12 fields, and that
+sprint hasn't shipped yet; used 65/66 to avoid a collision once it does.
+
+### Also updated
+
+- `SurveilanceSummaryTab.tsx`'s `ROWS` array — added Address and CDC Name rows
+  (§11's list was written before these two fields existed).
+- Both fixes are scoped entirely to Surveillance 1's own files
+  (`surveilanceSheetMapping.ts`, `SurveilanceSummaryTab.tsx`, this new
+  migration) — no External Client code or migrations touched, per the
+  standing "Do NOT edit new client flow" constraint and this session's direct
+  confirmation.
+
+**Still not applied:** migration 275 has been written but not run — same
+manual-deploy step every migration in this repo needs.
+

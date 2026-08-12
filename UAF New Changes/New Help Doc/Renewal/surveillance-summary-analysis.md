@@ -1,5 +1,26 @@
 # Surveillance 1 (Renewal) — Summary Excel Import Analysis
 
+> **⚠️ SUPERSEDED — kept for historical record only, not authoritative.**
+> This was the pre-build analysis; the actual build happened afterward and
+> diverged from it in real ways (migration numbers, field names, and 4
+> mapping bugs found by re-checking against the real sheet). **For current
+> field mappings, migration numbers, and schema, read
+> [`Sprints/Sprint_7.md`](Sprints/Sprint_7.md) — specifically §6 (what
+> shipped), §11 (Summary tab + 3 RPC bugs), and §12 (mapping re-verified
+> against the real sheet, address/CDC-name/team-column fixes).** Known
+> drift from this doc, so you don't get misled reading below:
+> - "migration 265" here → actually shipped as **271/272** (265 was already
+>   claimed by Recertification's own work by build time)
+> - §3's "ADDRESS → company_name__a (coupled)" was an early guess that
+>   shipped as a real bug, since fixed — see §12
+> - §3/§6 don't mention `cdc_name__a` or the `surv `-prefixed
+>   auditor/tech-reviewer/lead-auditor source columns — those were only
+>   discovered when the real sample sheet was re-checked field-by-field
+>   after the first build, see §12
+> - Every item in "Clarifications needed from you" (bottom of this doc) was
+>   answered during the actual build — answers are in Sprint_7.md §6/§11/§12,
+>   not reflected here
+
 **Status:** Analysis only — no code/migrations written yet.
 
 This document maps your Surveillance 1 summary CSV against what's currently in the `tenant.renewal_clients__a` schema, to decide whether and how to build a summary import tool like External Client has.
