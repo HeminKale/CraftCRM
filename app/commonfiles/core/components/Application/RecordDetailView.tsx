@@ -13,6 +13,8 @@ import ReviewActionPanel from '../custom/External_Client/ReviewActionPanel';
 import StageAuditActionPanel from '../custom/External_Client/StageAuditActionPanel';
 import RenewalWorkflowBar from '../custom/Renewal_Client/RenewalWorkflowBar';
 import RenewalActionPanel from '../custom/Renewal_Client/RenewalActionPanel';
+import RecertificationWorkflowBar from '../custom/Recertification_Client/RecertificationWorkflowBar';
+import RecertificationActionPanel from '../custom/Recertification_Client/RecertificationActionPanel';
 import toast from 'react-hot-toast';
 import { useUserMap, resolveUserValue } from '../../hooks/useUserMap';
 
@@ -127,10 +129,32 @@ const SURV_STATUS_ORDER: string[] = [
   'Surv_Closed', 'CDC_Approved', 'Certificate_Issued',
 ];
 
+// Recertification (recertification_clients__a) — Sprint 5, same lock
+// mechanism as Surveillance 1's SURV_STATUS_ORDER above, applied to
+// recert_audit_report per the sprint plan's explicit "build the client-
+// visibility lock in from the start" note (Surveillance 1 missed this on
+// its first pass and needed a follow-up audit to catch it — not repeating
+// that gap here). Kept as its OWN array for the same reason SURV_STATUS_ORDER
+// is its own array, not appended to it or STAGE_STATUS_ORDER: 'Team_Assigned'
+// is a real status__a value on ALL THREE objects now, so a shared array
+// would silently rank Recertification's 'Team_Assigned' at whichever other
+// object's position for that name happened to be defined first — harmless
+// today, a landmine the next time this threshold check is touched.
+const RECERT_STATUS_ORDER: string[] = [
+  'Recert_Intimation_Sent', 'Recert_Application_Sent', 'Recert_Application_Accepted',
+  'Recert_Quotation_Received', 'Recert_Agreement_Sent', 'Recert_Agreement_Signed',
+  'Recert_Team_Assigned', 'Recert_Plan_Sent', 'Recert_Plan_Accepted',
+  'Recert_NCR_Sent', 'Recert_NCR_RCA_Uploaded', 'Recert_Auditor_Accepted',
+  'Recert_Evidences_Uploaded', 'Recert_Evidences_Accepted',
+  'Recert_Report_Sent', 'Recert_Tech_Findings_Given', 'Recert_Closed',
+  'Recert_CDC_Approved', 'Recert_Certificate_Issued',
+];
+
 const STAGE_REPORT_UNLOCK_AT: Record<string, { order: string[]; unlockAt: string }> = {
   stage1_report:             { order: STAGE_STATUS_ORDER, unlockAt: 'Stage1_Tech_Findings_Given' },
   stage2_report:             { order: STAGE_STATUS_ORDER, unlockAt: 'Stage2_Tech_Findings_Given' },
   surveillance_audit_report: { order: SURV_STATUS_ORDER,  unlockAt: 'Surv_Tech_Findings_Given' },
+  recert_audit_report:       { order: RECERT_STATUS_ORDER, unlockAt: 'Recert_Tech_Findings_Given' },
 };
 
 const isStageReportLockedForClient = (fieldName: string, recordData: RecordData | null, currentUserId?: string): boolean => {
@@ -190,6 +214,29 @@ const RENEWAL_FILE_FIELD_UPLOAD_ROLE: Record<string, FileUploadRule> = {
   cdc_report:                     'cdc_only',
 };
 
+// Recertification (recertification_clients__a) — Sprint 5. Server-side twin
+// lives across migrations 264/265/266/267/268's start_file_upload blocks;
+// this is the matching frontend hard floor, same reasoning as
+// RENEWAL_FILE_FIELD_UPLOAD_ROLE's header above. A THIRD, entirely
+// independent map — never merged with either map above, selected by object
+// identity at the call site only. Four more entries than Surveillance 1's
+// map (application form, quotation, agreement, evidences) — the intake and
+// evidences checkpoints Surveillance 1 doesn't have.
+const RECERT_FILE_FIELD_UPLOAD_ROLE: Record<string, FileUploadRule> = {
+  recert_intimation_letter: 'crm_only',
+  recert_application_form:  'client_only',
+  recert_quotation:         'crm_only',
+  recert_agreement:         'crm_only',
+  recert_audit_plan:        'crm_or_auditor',
+  recert_ncr:               'crm_or_auditor',
+  recert_ncr_rca:           'client_only',
+  recert_evidences:         'client_only',
+  recert_audit_report:      'crm_or_auditor',
+  recert_tech_findings_file:'tech_only',
+  recert_cdc_report:        'cdc_only',
+  recert_certificates:      'crm_only',
+};
+
 const isFileUploadAllowedForRole = (
   fieldName: string,
   recordData: RecordData | null,
@@ -197,8 +244,13 @@ const isFileUploadAllowedForRole = (
   userRole: string | undefined,
   customRoleName: string | null,
   isRenewalObject: boolean,
+  isRecertObject: boolean = false,
 ): boolean => {
-  const rule = (isRenewalObject ? RENEWAL_FILE_FIELD_UPLOAD_ROLE : EXTERNAL_CLIENT_FILE_FIELD_UPLOAD_ROLE)[fieldName];
+  const rule = (
+    isRecertObject ? RECERT_FILE_FIELD_UPLOAD_ROLE :
+    isRenewalObject ? RENEWAL_FILE_FIELD_UPLOAD_ROLE :
+    EXTERNAL_CLIENT_FILE_FIELD_UPLOAD_ROLE
+  )[fieldName];
   if (!rule) return true; // not one of the hard-floored fields — Permission Set decides alone
 
   if (userRole === 'admin') return true;
@@ -1466,7 +1518,11 @@ export default function RecordDetailView({
                                           multiple={field.type === 'files'}
                                           readOnly={
                                             !can('edit', 'field', field.id) ||
-                                            !isFileUploadAllowedForRole(field.name, recordData, user?.id, userProfile?.role, customRoleName, objectLabel?.toLowerCase().includes('renewal') ?? false)
+                                            !isFileUploadAllowedForRole(
+                                              field.name, recordData, user?.id, userProfile?.role, customRoleName,
+                                              objectLabel?.toLowerCase().includes('renewal') ?? false,
+                                              objectLabel?.toLowerCase().includes('recertification') ?? false,
+                                            )
                                           }
                                           companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
                                           onUploadComplete={() => setRefreshKey(k => k + 1)}
@@ -1841,6 +1897,28 @@ export default function RecordDetailView({
             recordData={recordData}
           />
           <RenewalActionPanel
+            recordId={recordId}
+            recordData={recordData}
+            objectId={objectId}
+            currentUserRole={userProfile?.role || 'user'}
+            currentCustomRole={customRoleName}
+            currentUserId={user?.id || ''}
+            tenantId={tenant?.id}
+            onActionComplete={() => setRefreshKey(k => k + 1)}
+          />
+        </>
+      )}
+
+      {/* Workflow bar + Action panel — only for Recertification Clients
+          object. Own conditional block, own components — never merged with
+          the Renewal block above even though both follow the same shape. */}
+      {objectLabel?.toLowerCase().includes('recertification') && recordData && (
+        <>
+          <RecertificationWorkflowBar
+            status={recordData['status__a'] ?? null}
+            recordData={recordData}
+          />
+          <RecertificationActionPanel
             recordId={recordId}
             recordData={recordData}
             objectId={objectId}

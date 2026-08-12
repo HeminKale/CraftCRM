@@ -1,11 +1,90 @@
 # Recertification — Sprint Plan
 
-**Status: Sprint 0 and Sprint 1 built.** Migrations
-`supabase/migrations/264_recertification_table_and_intimation.sql` (Sprint 0)
-and `supabase/migrations/265_recertification_intake.sql` (Sprint 1), plus
-`NewRecertificationForm.tsx` (registered in `CustomTabRenderer.tsx`) and the
-`recertification_intimation` template in `app/api/notifications/send/route.ts`.
-Not yet run against a live database or QA'd — Sprints 2-7 remain unbuilt. Page
+**Status: Sprints 0-4 built and migrated to the live database; Sprints 5-6
+(frontend, Permission Sets) built, not yet migrated/QA'd; Sprint 8 (Summary
+Excel Import, unplanned addition) built, not yet migrated.** (264-268 all run
+successfully; RLS deliberately skipped for the new table, consistent with
+`external_clients__a`/`renewal_clients__a`, which have never had RLS either —
+both rely purely on RPC-level `tenant_id` filtering.)
+
+**CDC-checkpoint blocker: fixed, pending migration run.** The invite-user
+flow had two bugs (a dual-account-creation collision that likely broke every
+first-time invite, and a silently-dropped custom-role picker) — both fixed
+this session, see `supabase/migrations/270_fix_invite_custom_role.sql` and
+the `send-invitation` route rewrite. Resend is now configured (API key +
+from-address added). Once 270 is run, inviting a CDC user works correctly in
+one step. Not a code gap in migration 268 — that gate was always correct;
+this was purely a prerequisite-data/invite-infrastructure problem.
+- Sprint 0: `supabase/migrations/264_recertification_table_and_intimation.sql`
+- Sprint 1: `supabase/migrations/265_recertification_intake.sql`
+- Sprint 2: `supabase/migrations/266_recertification_team_and_plan.sql` —
+  `assign_recert_team` / `review_recert_plan`, `recert_audit_plan` upload
+  gates with the re-upload status guard shipped from day one (unlike
+  Surveillance 1, which needed migration 262 as a follow-up fix for the same
+  gap).
+- Sprint 3: `supabase/migrations/267_recertification_ncr_rca_evidences.sql` —
+  `review_recert_ncr_rca` / `review_recert_evidences`, both gated to the
+  SPECIFIC assigned auditor (not just any Auditor-role holder); NCR/RCA/
+  evidences upload gates, all three with re-upload status guards from day
+  one; `recert_ncr_rca` and `recert_evidences` uploads deliberately do NOT
+  clear their rejection-notes fields (only the review RPCs' accept branch
+  does) — matches Surveillance 1's migration 259 correction, built in here
+  from the start rather than needing its own fix.
+- Sprint 4: `supabase/migrations/268_recertification_report_tech_cdc_certificate.sql`
+  — `submit_recert_tech_findings` / `close_recert_audit`; all four Sprint 4
+  hard upload gates (`recert_audit_report` CRM-or-Auditor, `recert_tech_findings_file`
+  Tech-only, `recert_cdc_report` CDC-only, `recert_certificates` CRM-only)
+  shipped in this same migration rather than split across a follow-up file
+  the way Surveillance 1's were. Row-by-row re-verified against the actual
+  rights-matrix screenshot while writing, not just the plan text — see
+  `Sprint_4.md`. This is the **19th and final** `status__a` value registered
+  for this epic (1+5+3+5+5 = 19, matching the plan's target flow exactly).
+- Sprint 5 (Frontend): `RecertificationActionPanel.tsx` (20 checkpoint panels)
+  + `RecertificationWorkflowBar.tsx` (19-stage bar), both own files, plus
+  `RecordDetailView.tsx` changes — a third, independent `RECERT_STATUS_ORDER`
+  array (client-visibility lock on `recert_audit_report`, built in from the
+  start, not retrofitted) and `RECERT_FILE_FIELD_UPLOAD_ROLE` map (12
+  entries), neither merged with the other two objects' equivalents.
+  `npx tsc --noEmit` clean (0 errors); `git diff` on `RecordDetailView.tsx`
+  showed only the 2 intentional line replacements as deletions — External
+  Client's and Surveillance 1's code paths confirmed untouched.
+- Sprint 6 (Permission Sets): `supabase/migrations/269_recertification_permission_set_entries.sql`
+  — 18 entries across 10 fields, direct `INSERT ... ON CONFLICT`, no manual
+  Settings walkthrough. Scope re-derived from 263's precedent while writing,
+  not transcribed from the earlier draft table in this doc — three rows in
+  that draft turned out to be wrong (an unregistered-field target and two
+  remarks-fields CRM/Auditor/the client need to read, not hide) and were
+  dropped; the table above now matches what actually shipped.
+- `NewRecertificationForm.tsx` (registered in `CustomTabRenderer.tsx`) +
+  `recertification_intimation` email template in
+  `app/api/notifications/send/route.ts`.
+- Sprint 8 (Summary Excel Import, unplanned addition — mirrors Surveillance
+  1's own Sprint 7): `supabase/migrations/273_recert_summary_metadata_fields.sql`
+  (23 new fields, including a real pre-existing gap this closed —
+  `recert_audit_date__a`, the only one of the three workflow objects that
+  never got a manual "audit conducted on" field) +
+  `274_recert_summary_rpcs.sql` + `RecertificationImport.tsx` +
+  `RecertificationSummaryTab.tsx` + `recertSheetMapping.ts`. Single-table
+  direct import (no separate summary object), matching Surveillance 1's own
+  Sprint 7 as actually built, not New Client's heavier separate-table
+  architecture — confirmed decision. Written against `SurveilanceImport.tsx`'s
+  *corrected* RPC signatures from the start (3 real bugs that component
+  shipped with — wrong object-UUID resolution, wrong `update_tenant_record`
+  params, wrong stored-file shape — none repeated here). See `Sprint_8.md`.
+
+Per-sprint "what shipped" docs: [`Sprint_0_1.md`](Sprint_0_1.md),
+[`Sprint_2.md`](Sprint_2.md), [`Sprint_3.md`](Sprint_3.md),
+[`Sprint_4.md`](Sprint_4.md), [`Sprint_5.md`](Sprint_5.md),
+[`Sprint_6.md`](Sprint_6.md), [`Sprint_8.md`](Sprint_8.md) — written alongside
+each sprint from Sprint 4 onward (Sprints 0-3's docs were written
+retroactively after the gap was
+flagged).
+
+Every migration from 265 onward that touches `start_file_upload`/
+`finalize_file_upload` reproduces the immediately-prior migration's body and
+gets diffed (comments-stripped) to confirm byte-identical outside the new
+blocks — done for every hop (264→265→266→267→268), not just assumed. Not yet
+QA'd. Sprint 7 (QA) remains unbuilt — the last sprint in this plan. Page
 Layout placement (your side) still needed before the new fields are visible
 in the UI, same as both prior epics.
 
@@ -291,30 +370,50 @@ half must already be correct here).
 
 ---
 
-## Sprint 6 — Permission Set Entries (SQL)
+## Sprint 6 — Permission Set Entries (SQL) — BUILT
 
-**Tasks**
-- One migration, same technique as Renewal's 263: resolve each Permission Set by
-  tenant + exact name (`CRM Office`, `Auditor`, `Tech reviewer`, `CDC`,
-  `External Customer`), resolve each field by object + name, upsert into
-  `tenant.permission_set_entries`. No manual Settings walkthrough sprint.
-- Deny list, read directly off the matrix (final pass once fields exist — this is
-  a preview, not to be trusted over a fresh re-check the way Renewal's Sprint 5
-  first draft had one row wrong):
+**Migration:** `supabase/migrations/269_recertification_permission_set_entries.sql`.
+Same technique as Renewal's 263: resolve each Permission Set by tenant + exact
+name (`CRM Office`, `Auditor`, `Tech reviewer`, `CDC`, `External Customer`),
+resolve each field by object + name, direct `INSERT ... ON CONFLICT` into
+`tenant.permission_set_entries`. No manual Settings walkthrough sprint.
 
-| Field | Deny read for |
+**Deny list actually shipped** — narrower than every earlier draft of this
+table, not broader. Re-deriving from 263's own scope discipline (not just its
+SQL technique) while writing the migration found the previous draft below
+included several rows that don't belong at all: an unregistered-field entry
+(`auditor_id__a`/`tech_reviewer_id__a` — impossible to target, not in
+`tenant.fields`) and three reject-reason/remarks-field entries that would have
+hidden context CRM/Auditor/the client need to read to act on a revision
+(`recert_plan_client_remarks__a`, `recert_rca_rejection_notes__a`) — see
+`Sprint_6.md` for the full reasoning on each dropped row:
+
+| Field | Denied for |
 |---|---|
-| `recert_ncr` | Tech reviewer |
-| `recert_ncr_rca` | Tech reviewer |
-| `recert_evidences` | Tech reviewer |
+| `recert_intimation_letter` | Auditor, Tech reviewer |
+| `recert_application_form` | Auditor, Tech reviewer |
+| `recert_quotation` | Auditor, Tech reviewer |
+| `recert_agreement` | Auditor, Tech reviewer |
+| `recert_audit_plan` | Tech reviewer only |
+| `recert_ncr` | Tech reviewer only |
+| `recert_ncr_rca` | none — no blank cell on this row at all |
+| `recert_evidences` | none — no blank cell on this row at all |
 | `recert_tech_findings_notes` | External Customer (Client) |
 | `recert_tech_findings_file` | External Customer (Client) |
 | `recert_cdc_report` | External Customer, Auditor, Tech reviewer |
-| `recert_cdc_report` (CRM) | edit only, stays view-only |
+| `recert_cdc_report` (CRM) | edit denied, stays view-only |
 | `recert_certificates` | Auditor, Tech reviewer |
 
+Accept-only rows (Application acceptance, Signed client agreement, Recert plan
+accept, NCR+RCA acceptance, Tech findings close) get no PS entries — their
+blank cells mean "no accept/close button for this role," already enforced by
+each RPC's own role check, matching 263's exact precedent for its own
+equivalent rows.
+
 - Confirm CDC/Auditor/Tech reviewer roles exist and are assigned (should already be
-  true from the Surveillance 1 rollout — just a check, not new work).
+  true from the Surveillance 1 rollout — just a check, not new work). **CDC
+  specifically is a known open blocker** — see the status header above; the
+  migration's `recert_cdc_report` entries are correct and ready regardless.
 
 **Dependencies:** Sprint 5 (fields must be registered before entries can target
 them by field ID).

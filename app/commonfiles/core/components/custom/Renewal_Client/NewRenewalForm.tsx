@@ -104,6 +104,13 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
 
       const newRecordId: string = result.record_id;
       let letterUploaded = false;
+      // Captured directly from the upload step below — avoids a second
+      // round-trip to re-fetch the record just to read back what we already
+      // know. Storage location, not a stored URL: every download in this app
+      // goes through a freshly-signed URL (see FileUploadField.tsx's download
+      // handler), never a persisted public link.
+      let letterBucket: string | null = null;
+      let letterPath: string | null = null;
 
       // Upload surveillance letter if provided
       if (file && objectId) {
@@ -141,6 +148,8 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
                   p_final_mime_type: file.type || null,
                 });
                 letterUploaded = true;
+                letterBucket = bucket || BUCKET;
+                letterPath = storage_path;
               }
             } else {
               toast('Letter upload failed — you can upload from the record.', { icon: '⚠️' });
@@ -161,20 +170,40 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
         try {
           const selectedClient = clients.find(c => c.id === clientId);
           const companyLabel = selectedClient?.label || undefined;
+
+          // Generate a real signed URL from the bucket/path captured during
+          // upload above — Resend's server needs a fetchable URL, and a
+          // signed URL is the only kind this app's storage ever hands out.
+          let attachmentUrl: string | undefined;
+          if (letterUploaded && letterBucket && letterPath) {
+            const { data: signedData, error: signErr } = await supabase.storage
+              .from(letterBucket)
+              .createSignedUrl(letterPath, 300); // 5 min — just enough for the API route to fetch it
+            if (!signErr && signedData?.signedUrl) {
+              attachmentUrl = signedData.signedUrl;
+            }
+          }
+
+          const emailPayload: any = {
+            to: email.trim(),
+            template: 'surveillance_intimation',
+            data: { companyName: companyLabel, hasLetter: letterUploaded },
+          };
+          if (attachmentUrl) {
+            emailPayload.attachmentUrl = attachmentUrl;
+          }
+
           const res = await fetch('/api/notifications/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              to: email.trim(),
-              template: 'surveillance_intimation',
-              data: { companyName: companyLabel, hasLetter: letterUploaded },
-            }),
+            body: JSON.stringify(emailPayload),
           });
           const notifyResult = await res.json().catch(() => null);
           if (!notifyResult?.success) {
             toast('Record created, but the notification email was not sent.', { icon: '⚠️' });
           }
-        } catch {
+        } catch (err) {
+          console.error('Email notification error:', err);
           toast('Record created, but the notification email was not sent.', { icon: '⚠️' });
         }
       }

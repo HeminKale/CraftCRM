@@ -57,8 +57,19 @@ Surv_Report_Sent      — CRM/Auditor upload audit report                 [Sprin
 Surv_Tech_Findings_Given — Tech Reviewer submits findings (or direct-accepts) [Sprint 3]
 Surv_Closed           — Auditor closes                                  [Sprint 3]
 CDC_Approved          — CDC uploads CDC report (upload is the approval) [Sprint 3]
-Certificate_Issued    — CRM uploads certificate(s) — terminal for this plan [Sprint 3]
+Certificate_Issued    — CRM uploads certificate(s)                      [Sprint 3]
+Suspension_Intimation_Sent   — CRM uploads suspension intimation        [Sprint 8]
+Suspension_Decision_Uploaded — CDC uploads suspension decision          [Sprint 8]
+Suspension_Letter_Sent       — CRM uploads suspension letter            [Sprint 8]
+Withdrawal_Intimation_Sent   — CRM uploads withdrawal intimation        [Sprint 8]
+Withdrawal_Decision_Uploaded — CDC uploads withdrawal decision          [Sprint 8]
+Withdrawal_Letter_Sent       — CRM uploads withdrawal letter — terminal [Sprint 8]
 ```
+
+**No longer terminal as of Sprint 8's plan:** `Certificate_Issued` was the end of the
+chain through Sprint 6. Sprint 8 extends it — see below. (Sprint 7, documented
+separately in `Sprint_7.md`, is orthogonal — Summary Excel import — and doesn't sit
+in this linear chain at all.)
 
 Reject step-backs: plan reject → stays `Surv_Plan_Sent` + client remarks (cleared on
 CRM/Auditor's next plan upload, not just on accept — building the 238 bug-fix in from
@@ -292,9 +303,11 @@ the edit-mode dropdown in the right order.
 
 ## Total estimated effort
 
-~12.5 working days across 7 sprints (0–6). Backend sprints (1–3) and Sprint 4
-(frontend) are the bulk; Sprint 5 is pure stakeholder config; Sprint 0 can run in
-parallel with Sprint 1 since it touches different files.
+~15.5 working days across 8 sprints (0–6, then 8; Sprint 7 — Summary Excel import —
+is documented separately in `Sprint_7.md` and not counted here since it's
+orthogonal to this linear chain). Backend sprints (1–3) and Sprint 4 (frontend) are
+the bulk; Sprint 5 is pure stakeholder config; Sprint 0 can run in parallel with
+Sprint 1 since it touches different files.
 
 | Sprint | Focus | Effort |
 |---|---|---|
@@ -305,6 +318,7 @@ parallel with Sprint 1 since it touches different files.
 | 4 | Action panel + workflow bar (frontend) | 3 days |
 | 5 | Permission Set config | 0.5 day (stakeholder) |
 | 6 | QA + docs | 2 days |
+| 8 | Suspension & Withdrawal chain (backend + frontend + PS + email) | 3 days |
 
 ---
 
@@ -337,6 +351,18 @@ parallel with Sprint 1 since it touches different files.
 | — | `cdc_date__a` | DATE | Auto, on upload |
 | `surveillance_certificates` | `surveillance_certificates__a` | files *(existing, reused)* | Upload — CRM only |
 | — | `certificates_sent_date__a` *(existing, reused)* | DATE | Auto, on upload |
+| `surv_suspension_intimation` | `surv_suspension_intimation__a` | file | Upload — CRM only *(Sprint 8)* |
+| — | `surv_suspension_intimation_date__a` | DATE | Auto, on upload *(Sprint 8)* |
+| `surv_suspension_decision` | `surv_suspension_decision__a` | file | Upload — CDC only *(Sprint 8)* |
+| — | `surv_suspension_decision_date__a` | DATE | Auto, on upload *(Sprint 8)* |
+| `surv_suspension_letter` | `surv_suspension_letter__a` | file | Upload — CRM only *(Sprint 8)* |
+| — | `surv_suspension_letter_date__a` | DATE | Auto, on upload *(Sprint 8)* |
+| `surv_withdrawal_intimation` | `surv_withdrawal_intimation__a` | file | Upload — CRM only *(Sprint 8)* |
+| — | `surv_withdrawal_intimation_date__a` | DATE | Auto, on upload *(Sprint 8)* |
+| `surv_withdrawal_decision` | `surv_withdrawal_decision__a` | file | Upload — CDC only *(Sprint 8)* |
+| — | `surv_withdrawal_decision_date__a` | DATE | Auto, on upload *(Sprint 8)* |
+| `surv_withdrawal_letter` | `surv_withdrawal_letter__a` | file | Upload — CRM only *(Sprint 8, terminal)* |
+| — | `surv_withdrawal_letter_date__a` | DATE | Auto, on upload *(Sprint 8)* |
 
 ---
 
@@ -351,16 +377,182 @@ parallel with Sprint 1 since it touches different files.
 | `submit_surv_tech_findings(p_record_id, p_notes)` | Tech Reviewer/admin | notes optional → `Surv_Tech_Findings_Given` + date |
 | `close_surv_audit(p_record_id, p_closure_notes)` | Auditor/admin | → `Surv_Closed` + notes + date |
 
+**No new RPCs in Sprint 8** — all six suspension/withdrawal checkpoints are
+"upload IS the action," handled entirely inside `finalize_file_upload` /
+`start_file_upload`, same as `cdc_report` and `surveillance_certificates` above.
+
 No RPC hard-blocks on current `status__a` before acting — matches the existing loose
 convention across the whole app; sequencing is enforced by which panel the frontend
 shows, not by the RPC itself.
 
 ---
 
+## Sprint 8 — Suspension & Withdrawal Chain
+
+**Un-deferred.** The six rights-matrix rows after Certificate Issue (`suspension
+intimation` → `withdrawal letter`) were explicitly out of scope through Sprint 6.
+This sprint picks them back up, confirmed against a fresh read of the matrix.
+
+**Confirmed shape (all six rows), different from every earlier checkpoint in this
+object:** none of these six rows has an accept/reject step at all — every one is a
+plain file/document field, and **the act of uploading it is the entire action**,
+same pattern Sprint 3 already used for `cdc_report` and `surveillance_certificates`.
+No new custom accept/reject RPC is needed anywhere in this sprint — only
+`finalize_file_upload` / `start_file_upload` extensions, exactly like Sprint 3's
+last two rows.
+
+### Roles (confirmed against the matrix screenshot)
+
+| Row | CRM | CDC | Client | Auditor / Tech Reviewer |
+|---|---|---|---|---|
+| suspension intimation | upload | — | view / **get email** | — |
+| suspension decision | view | upload | — | — |
+| suspension letter | upload | — | view / **get email** | — |
+| withdrawal intimation | upload | — | view / **get email** | — |
+| withdrawal decision | view | upload | — | — |
+| withdrawal letter | upload | — | view / **get email** | — |
+
+`—` = no access at all (`can_read = false`), not just no-upload — same convention
+`surv_ncr`'s Client-blank cell used in Sprint 5.
+
+**Email only fires for the four CRM-uploaded fields** (intimation ×2, letter ×2) —
+the two CDC-uploaded decision fields are view-eligible (CRM can see them) but never
+trigger an email, per this session's explicit confirmation. This lines up exactly
+with the matrix: only rows with "get email" in the Client column send mail; the
+decision rows have no Client cell at all.
+
+### Field naming (proposed, confirms the `surv_` prefix convention Sprints 1–3
+established for every genuinely new field — distinct from the original
+`surveillance_` prefix migration 221 used for pre-existing fields)
+
+| Matrix row | File column | Companion date column |
+|---|---|---|
+| suspension intimation | `surv_suspension_intimation__a` | `surv_suspension_intimation_date__a` |
+| suspension decision | `surv_suspension_decision__a` | `surv_suspension_decision_date__a` |
+| suspension letter | `surv_suspension_letter__a` | `surv_suspension_letter_date__a` |
+| withdrawal intimation | `surv_withdrawal_intimation__a` | `surv_withdrawal_intimation_date__a` |
+| withdrawal decision | `surv_withdrawal_decision__a` | `surv_withdrawal_decision_date__a` |
+| withdrawal letter | `surv_withdrawal_letter__a` | `surv_withdrawal_letter_date__a` |
+
+12 new columns total — 6 file, 6 date. No new text/notes columns: per this
+session's confirmation, every one of these six rows is file/document-only, no
+free-text remarks field the way earlier checkpoints (plan, RCA) had.
+
+### Sequencing — confirmed strictly linear
+
+Each of the 6 fields' `start_file_upload` hard block requires `status__a` to be
+**exactly** the status the previous checkpoint set — no branching, no
+"withdrawal without suspension" shortcut, matching every other chain in this
+object:
+
+| Field | Requires `status__a =` |
+|---|---|
+| `surv_suspension_intimation` | `Certificate_Issued` |
+| `surv_suspension_decision` | `Suspension_Intimation_Sent` |
+| `surv_suspension_letter` | `Suspension_Decision_Uploaded` |
+| `surv_withdrawal_intimation` | `Suspension_Letter_Sent` |
+| `surv_withdrawal_decision` | `Withdrawal_Intimation_Sent` |
+| `surv_withdrawal_letter` | `Withdrawal_Decision_Uploaded` |
+
+### Tasks
+
+- New migration (next free number at build time — verify current head).
+- 12 new columns on `tenant.renewal_clients__a` per the table above.
+- Register all 12 in `tenant.fields` per tenant (display_order continues from
+  Sprint 7's `surv_audit_pack` at 52 → 53 through 64).
+- 6 new `status__a` picklist values (`Suspension_Intimation_Sent` through
+  `Withdrawal_Letter_Sent`), display_order 14–19, continuing directly after
+  Sprint 3's `Certificate_Issued` (13).
+- Extend `finalize_file_upload` with 6 new `IF` blocks, one per field — CRM-only
+  soft gate + auto-advance for the 4 intimation/letter fields, CDC-only soft gate
+  + auto-advance for the 2 decision fields. Each sets its own `..._date__a` to
+  `CURRENT_DATE`. Mirrors the `cdc_report` / `surveillance_certificates` blocks in
+  migration 260 exactly — reproduce the full current live body, don't diff-patch
+  (this repo's established convention for every shared-function change).
+- Extend `start_file_upload` with 6 new hard-block role gates (CRM-only ×4,
+  CDC-only ×2) plus the exact-prior-status sequencing gate from the table above.
+  Mirrors migration 261's structure.
+- Permission Set entries (SQL migration, same technique as migration 263 —
+  resolved by tenant + PS name + field name, not hardcoded UUIDs):
+  - Auditor, Tech reviewer: `can_read = false` on all 12 new fields (6 file + 6
+    date) — blank cells across the board in the matrix.
+  - Client: `can_read = false` on the 2 decision fields + their date columns —
+    blank Client cell on those two rows only.
+  - CDC: `can_read = false` on the 4 intimation/letter fields + their date
+    columns — blank CDC cell on those four rows.
+  - CRM: `can_edit = false` on the 2 decision fields (stays `can_read = true` —
+    view only) — defense-in-depth alongside the RPC hard block, same pattern
+    migration 263 used for `cdc_report`.
+- **Email:** 4 new templates in `app/api/notifications/send/route.ts`'s
+  `TEMPLATES` map — `surveillance_suspension_intimation`,
+  `surveillance_suspension_letter`, `surveillance_withdrawal_intimation`,
+  `surveillance_withdrawal_letter`. Same generic-route pattern Sprint 0 already
+  built (this route was deliberately designed to grow one template per
+  checkpoint, not a new endpoint each time).
+- **Attachment plumbing (frontend, non-trivial — this is the real new work in
+  this sprint, not the migration):** unlike Sprint 0's intimation-letter email
+  (sent once, at record-creation time, from `NewRenewalForm.tsx`, which already
+  has the file's bucket/path in scope right after upload), these four emails
+  fire from an **existing record's** generic field editor — `FileUploadField.tsx`
+  via `RecordDetailView.tsx`. `FileUploadField`'s `onUploadComplete` callback
+  currently takes no arguments; it needs to optionally report back the
+  bucket/path/filename of what was just uploaded (additive change — a bare
+  `() => void` caller stays valid, every other object's call site is
+  untouched). `RecordDetailView.tsx` then needs a small object-scoped map (same
+  pattern as `RENEWAL_FILE_FIELD_UPLOAD_ROLE`) naming which 4 fields trigger an
+  email, and on a matching upload: read `recordData.email__a` (already stored on
+  every renewal record, copied at creation — no extra lookup needed), sign a URL
+  for the just-uploaded file (`supabase.storage.createSignedUrl`, same call
+  `NewRenewalForm.tsx`'s Sprint 0 fix now uses — **not** a stored `.url` key,
+  there isn't one), and POST to `/api/notifications/send` with the matching
+  template. Failure is a toast warning only, never blocks the upload itself —
+  same soft-failure philosophy as every other notification in this epic.
+- `RenewalActionPanel.tsx`: 6 new instructional banner blocks (no buttons, no
+  RPC calls from this panel — same shape as the existing "Upload CDC Report" /
+  "Issue Certificate" banners), one per checkpoint, gated to the correct
+  uploading role at the correct status.
+- `RenewalWorkflowBar.tsx`: extend `STAGES` from 13 to 19 entries. The
+  sliding-window pattern is already built (Sprint 4) — this is array growth
+  only, no logic change.
+- `RecordDetailView.tsx`: add all 6 new file fields to
+  `RENEWAL_FILE_FIELD_UPLOAD_ROLE` (4× `crm_only`, 2× `cdc_only`).
+- Page Layout: place all 12 new fields (Object Manager → Renewal Clients → Page
+  Layout) — same manual step every prior sprint needed.
+- **Verify `surveillance_intimation_letter` is actually viewable on the record**
+  (this session's point 4) — it's been a registered field since the original
+  migration 221 and almost certainly already sits on Page Layout from before
+  this epic renamed "Renewal" to "Surveillance 1," but confirm rather than
+  assume: check Object Manager → Page Layout has it placed, and that no
+  Permission Set entry denies Client `can_read` on it. If both are already true,
+  this is a zero-code verification step, not a build task.
+
+**Acceptance criteria**
+- CRM can upload suspension intimation only when `status__a = 'Certificate_Issued'`;
+  wrong role/status denied at every one of the 6 sequencing gates in the table above.
+- Client receives an email with the suspension-intimation file attached the
+  moment CRM uploads it; Auditor/Tech Reviewer/CDC cannot see the field at all.
+- CDC can upload the suspension decision; CRM can view it (not edit); Client
+  cannot see it; no email fires for this upload.
+- Same two patterns repeat correctly for suspension letter, then all three
+  withdrawal rows.
+- `surveillance_intimation_letter` confirmed viewable on the record by the
+  linked client (verification step, not new code, unless something's actually
+  missing).
+- `npx tsc --noEmit` clean.
+
+**Dependencies:** Sprints 1–4 (same `finalize_file_upload` / `start_file_upload` /
+`RenewalActionPanel.tsx` / `RenewalWorkflowBar.tsx` chain, extended not forked).
+Independent of Sprint 7 (Summary Excel import) — no shared files.
+**Effort:** 3 days (migration + PS entries ~0.5 day, email plumbing ~1 day since it
+touches a shared component's prop signature, action panel + workflow bar ~1 day,
+manual Page Layout + verification + QA ~0.5 day).
+
+---
+
 ## Explicitly out of scope for this plan
 
-- **Suspension / Withdrawal** (rights-matrix rows after Certificate Issue) —
-  deferred per this session's decision. `Certificate_Issued` is the terminal status
-  until a future sprint plan picks this back up.
 - **`review_surveillance_intimation`'s NULL-reset reject path** — left as-is, not a
   confirmed bug (see status-flow section above).
+- **Repeat suspension cycles** (a client suspended, reinstated, then suspended
+  again) — Sprint 8 models one pass through Suspension → Withdrawal as a terminal
+  chain, not a loop. Revisit only if the real workflow needs reinstatement.

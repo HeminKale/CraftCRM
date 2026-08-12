@@ -32,9 +32,10 @@ const TEMPLATES: Record<string, TemplateBuilder> = {
       html: `
         <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
         <p>This is to inform you that a surveillance audit record has been created for
-        <strong>${company}</strong>. ${data.hasLetter
-          ? 'The surveillance intimation letter has been attached to your record.'
-          : 'The surveillance intimation letter will follow shortly.'}</p>
+        <strong>${company}</strong>.</p>
+        ${data.hasLetter
+          ? '<p><strong>The surveillance intimation letter is attached to this email.</strong></p>'
+          : '<p>The surveillance intimation letter will follow shortly.</p>'}
         <p>Please log in to your portal to review and respond.</p>
         <p>Regards,<br/>TWE Surveillance Team</p>
       `,
@@ -62,7 +63,7 @@ const TEMPLATES: Record<string, TemplateBuilder> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { to, template, data } = await req.json();
+    const { to, template, data, attachmentUrl } = await req.json();
 
     if (!to || !template) {
       return NextResponse.json({ success: false, message: 'Missing to or template' }, { status: 200 });
@@ -84,13 +85,43 @@ export async function POST(req: NextRequest) {
 
     const { subject, html } = build(data || {});
 
+    // Build email payload with optional attachments
+    interface EmailPayload {
+      from: string;
+      to: string;
+      subject: string;
+      html: string;
+      attachments?: Array<{
+        filename: string;
+        content: string;
+      }>;
+    }
+
+    const emailPayload: EmailPayload = { from, to, subject, html };
+
+    // If attachmentUrl provided, fetch the file and encode as base64 for attachment
+    if (attachmentUrl) {
+      try {
+        const fileResp = await fetch(attachmentUrl);
+        if (fileResp.ok) {
+          const buffer = await fileResp.arrayBuffer();
+          const base64 = Buffer.from(buffer).toString('base64');
+          const filename = attachmentUrl.split('/').pop()?.split('?')[0] || 'attachment';
+          emailPayload.attachments = [{ filename, content: base64 }];
+        }
+      } catch (err) {
+        console.warn('notifications/send: Failed to fetch attachment:', err);
+        // Continue without attachment — non-blocking failure
+      }
+    }
+
     const resp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from, to, subject, html }),
+      body: JSON.stringify(emailPayload),
     });
 
     const result = await resp.json().catch(() => ({}));
