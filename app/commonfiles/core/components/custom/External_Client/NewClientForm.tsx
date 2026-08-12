@@ -3,6 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useSupabase } from '../../../providers/SupabaseProvider';
+import { useCurrentApp } from '../../../hooks/useCurrentApp';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
@@ -137,6 +138,7 @@ async function parsePdf(f: File): Promise<Record<string, string>> {
 export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel }: Props) {
   const supabase = createClientComponentClient();
   const { user } = useSupabase();
+  const { selectedApp } = useCurrentApp();
 
   const [date] = useState(() => new Date().toISOString().split('T')[0]);
   const [entries, setEntries] = useState<ParsedEntry[]>([]);
@@ -222,6 +224,7 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
       name:       entry.fields['name'] || entry.fields['Company_name__a'] || 'New Client',
       created_by: user?.id || '',
       updated_by: user?.id || '',
+      certification_body__a: selectedApp?.name || '',
     };
 
     const { data: createData, error: createError } = await supabase.rpc('create_object_record', {

@@ -6,6 +6,17 @@ import { useSupabase } from '../../../providers/SupabaseProvider';
 import { useCurrentApp } from '../../../hooks/useCurrentApp';
 import toast from 'react-hot-toast';
 
+// ============================================================
+// New Recertification form — Recertification Sprint 0. Own file, does
+// not touch NewRenewalForm.tsx or NewClientForm.tsx (see
+// UAF New Changes/New Help Doc/Recertification/00_Sprint_Plan.md).
+//
+// Unlike NewRenewalForm's optional client picker, the External Client
+// link here is REQUIRED — a recertification record cannot exist unlinked
+// (create_recertification_client rejects a NULL p_external_client_id at
+// the RPC level too; this is the client-side mirror of that gate).
+// ============================================================
+
 interface Props {
   tabId: string;
   tabLabel: string;
@@ -24,24 +35,27 @@ interface ExternalClient {
 
 const BUCKET = 'tenant-uploads';
 
-export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel }: Props) {
+export default function NewRecertificationForm({ objectId, tenantId, onSuccess, onCancel }: Props) {
   const supabase = createClientComponentClient();
   const { tenant } = useSupabase();
   const { selectedApp } = useCurrentApp();
 
   const [date] = useState(() => new Date().toISOString().split('T')[0]);
 
-  // Client picker — optional
-  const [clients, setClients]             = useState<ExternalClient[]>([]);
-  const [clientId, setClientId]           = useState('');
+  // Client picker — REQUIRED
+  const [clients, setClients]               = useState<ExternalClient[]>([]);
+  const [clientId, setClientId]             = useState('');
   const [loadingClients, setLoadingClients] = useState(true);
+  const [clientError, setClientError]       = useState<string | null>(null);
 
   // Email — pre-filled from the linked client when picked, always editable
   const [email, setEmail] = useState('');
   const [emailTouched, setEmailTouched] = useState(false);
 
-  // Surveillance letter upload — optional
-  const [file, setFile]         = useState<File | null>(null);
+  // Intimation letter upload — optional at creation time (matches
+  // NewRenewalForm; the hard CRM-only gate lives at the RPC level and
+  // applies just the same to a later upload from the record view).
+  const [file, setFile]           = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -71,7 +85,8 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
         })
       );
     } catch {
-      // silently fail — picker is optional anyway
+      // listing failed — client picker will just show empty; submit still
+      // blocks on a required selection below
     } finally {
       setLoadingClients(false);
     }
@@ -93,29 +108,28 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!clientId) {
+      setClientError('An External Client is required to create a recertification record');
+      return;
+    }
+    setClientError(null);
+
     setSubmitting(true);
     try {
-      // Create the renewal record (client link optional)
-      const { data, error } = await supabase.rpc('create_renewal_client', {
-        p_external_client_id: clientId || null,
+      const { data, error } = await supabase.rpc('create_recertification_client', {
+        p_external_client_id: clientId,
         p_email: email.trim() || null,
         p_certification_body: selectedApp?.name || null,
       });
       if (error) throw error;
       const result = Array.isArray(data) ? data[0] : data;
-      if (!result?.success) throw new Error(result?.message || 'Failed to create renewal');
+      if (!result?.success) throw new Error(result?.message || 'Failed to create recertification record');
 
       const newRecordId: string = result.record_id;
       let letterUploaded = false;
-      // Captured directly from the upload step below — avoids a second
-      // round-trip to re-fetch the record just to read back what we already
-      // know. Storage location, not a stored URL: every download in this app
-      // goes through a freshly-signed URL (see FileUploadField.tsx's download
-      // handler), never a persisted public link.
-      let letterBucket: string | null = null;
-      let letterPath: string | null = null;
 
-      // Upload surveillance letter if provided
+      // Upload intimation letter if provided
       if (file && objectId) {
         try {
           const { data: fieldsData } = await supabase.rpc('get_tenant_fields', {
@@ -124,8 +138,8 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
           });
 
           const letterField = fieldsData?.find(
-            (f: any) => f.name === 'surveillance_intimation_letter' ||
-                        f.name === 'surveillance_intimation_letter__a'
+            (f: any) => f.name === 'recert_intimation_letter' ||
+                        f.name === 'recert_intimation_letter__a'
           );
 
           if (letterField) {
@@ -151,21 +165,19 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
                   p_final_mime_type: file.type || null,
                 });
                 letterUploaded = true;
-                letterBucket = bucket || BUCKET;
-                letterPath = storage_path;
               }
             } else {
               toast('Letter upload failed — you can upload from the record.', { icon: '⚠️' });
             }
           } else {
-            toast('Surveillance letter field not found — upload from the record.', { icon: '⚠️' });
+            toast('Intimation letter field not found — upload from the record.', { icon: '⚠️' });
           }
         } catch {
           toast('Letter upload failed — you can upload from the record.', { icon: '⚠️' });
         }
       }
 
-      toast.success('Surveillance 1 record created');
+      toast.success('Recertification record created');
 
       // Notify the client by email — best-effort, never blocks record
       // creation (same soft-failure philosophy as the letter upload above).
@@ -173,47 +185,27 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
         try {
           const selectedClient = clients.find(c => c.id === clientId);
           const companyLabel = selectedClient?.label || undefined;
-
-          // Generate a real signed URL from the bucket/path captured during
-          // upload above — Resend's server needs a fetchable URL, and a
-          // signed URL is the only kind this app's storage ever hands out.
-          let attachmentUrl: string | undefined;
-          if (letterUploaded && letterBucket && letterPath) {
-            const { data: signedData, error: signErr } = await supabase.storage
-              .from(letterBucket)
-              .createSignedUrl(letterPath, 300); // 5 min — just enough for the API route to fetch it
-            if (!signErr && signedData?.signedUrl) {
-              attachmentUrl = signedData.signedUrl;
-            }
-          }
-
-          const emailPayload: any = {
-            to: email.trim(),
-            template: 'surveillance_intimation',
-            data: { companyName: companyLabel, hasLetter: letterUploaded },
-          };
-          if (attachmentUrl) {
-            emailPayload.attachmentUrl = attachmentUrl;
-          }
-
           const res = await fetch('/api/notifications/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(emailPayload),
+            body: JSON.stringify({
+              to: email.trim(),
+              template: 'recertification_intimation',
+              data: { companyName: companyLabel, hasLetter: letterUploaded },
+            }),
           });
           const notifyResult = await res.json().catch(() => null);
           if (!notifyResult?.success) {
             toast('Record created, but the notification email was not sent.', { icon: '⚠️' });
           }
-        } catch (err) {
-          console.error('Email notification error:', err);
+        } catch {
           toast('Record created, but the notification email was not sent.', { icon: '⚠️' });
         }
       }
 
       onSuccess?.();
     } catch (err: any) {
-      toast.error(err.message || 'Failed to create renewal');
+      toast.error(err.message || 'Failed to create recertification record');
     } finally {
       setSubmitting(false);
     }
@@ -223,9 +215,9 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
     <div className="bg-white p-2">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">New Surveillance 1</h2>
+          <h2 className="text-xl font-semibold text-gray-900">New Recertification</h2>
           <p className="text-sm text-gray-500 mt-1">
-            Optionally link to an existing client and upload the surveillance intimation letter.
+            Link to an existing client and optionally upload the recertification intimation letter.
           </p>
         </div>
         {onCancel && (
@@ -239,11 +231,11 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
 
       <form onSubmit={handleSubmit} className="space-y-5">
 
-        {/* Row 1: Client picker (optional) + Date */}
+        {/* Row 1: Client picker (required) + Date */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Client <span className="text-gray-400 font-normal">(optional)</span>
+              Client <span className="text-red-500">*</span>
             </label>
             {loadingClients ? (
               <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
@@ -256,15 +248,18 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
             ) : (
               <select
                 value={clientId}
-                onChange={e => setClientId(e.target.value)}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:ring-blue-500 focus:border-blue-500"
+                onChange={e => { setClientId(e.target.value); setClientError(null); }}
+                className={`block w-full px-3 py-2 border rounded-md shadow-sm text-sm focus:ring-blue-500 focus:border-blue-500 ${
+                  clientError ? 'border-red-400' : 'border-gray-300'
+                }`}
               >
-                <option value="">— none —</option>
+                <option value="">— select a client —</option>
                 {clients.map(c => (
                   <option key={c.id} value={c.id}>{c.label}</option>
                 ))}
               </select>
             )}
+            {clientError && <p className="mt-1 text-xs text-red-600">{clientError}</p>}
           </div>
 
           <div>
@@ -292,10 +287,10 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
           />
         </div>
 
-        {/* Row 3: Surveillance Intimation Letter upload */}
+        {/* Row 3: Recertification Intimation Letter upload */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Surveillance Intimation Letter <span className="text-gray-400 font-normal">(optional)</span>
+            Recertification Intimation Letter <span className="text-gray-400 font-normal">(optional)</span>
           </label>
           <div
             onClick={() => !file && fileInputRef.current?.click()}
@@ -333,7 +328,7 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
                 <svg className="mx-auto w-8 h-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
-                <p className="text-sm text-gray-500">Click to upload surveillance intimation letter</p>
+                <p className="text-sm text-gray-500">Click to upload recertification intimation letter</p>
                 <p className="text-xs text-gray-400 mt-1">Any file type</p>
               </div>
             )}
@@ -359,7 +354,7 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
                 </svg>
                 Creating...
               </>
-            ) : 'Create Surveillance 1'}
+            ) : 'Create Recertification'}
           </button>
         </div>
       </form>

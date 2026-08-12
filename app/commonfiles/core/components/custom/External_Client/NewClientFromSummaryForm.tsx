@@ -4,6 +4,7 @@ import React, { useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useSupabase } from '../../../providers/SupabaseProvider';
+import { useCurrentApp } from '../../../hooks/useCurrentApp';
 import toast from 'react-hot-toast';
 import {
   STAGE_PROGRESSION,
@@ -58,6 +59,7 @@ interface Props {
 export default function NewClientFromSummaryForm({ isAdmin, onCreated, onCancel }: Props) {
   const supabase = createClientComponentClient();
   const { tenant, user } = useSupabase();
+  const { selectedApp } = useCurrentApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [rows, setRows]               = useState<ParsedRow[] | null>(null);
@@ -143,6 +145,7 @@ export default function NewClientFromSummaryForm({ isAdmin, onCreated, onCancel 
         name:       extInsertData['Company_name__a'] || 'New Client',
         created_by: user?.id || '',
         updated_by: user?.id || '',
+        certification_body__a: selectedApp?.name || '',
       };
 
       const summaryUpdateData: Record<string, string> = {};

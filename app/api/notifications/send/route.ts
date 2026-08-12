@@ -32,11 +32,95 @@ const TEMPLATES: Record<string, TemplateBuilder> = {
       html: `
         <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
         <p>This is to inform you that a surveillance audit record has been created for
-        <strong>${company}</strong>. ${data.hasLetter
-          ? 'The surveillance intimation letter has been attached to your record.'
-          : 'The surveillance intimation letter will follow shortly.'}</p>
+        <strong>${company}</strong>.</p>
+        ${data.hasLetter
+          ? '<p><strong>The surveillance intimation letter is attached to this email.</strong></p>'
+          : '<p>The surveillance intimation letter will follow shortly.</p>'}
         <p>Please log in to your portal to review and respond.</p>
         <p>Regards,<br/>TWE Surveillance Team</p>
+      `,
+    };
+  },
+
+  // Surveillance 1 Sprint 8 — see
+  // UAF New Changes/New Help Doc/Renewal/Sprints/00_Sprint_Plan.md, Sprint 8.
+  // Four templates, one per CRM-uploaded checkpoint (the two CDC-uploaded
+  // decision fields never trigger an email, confirmed — only rows with
+  // "get email" in the Client column of the rights matrix send mail).
+  surveillance_suspension_intimation: (data) => {
+    const company = data.companyName || 'your organization';
+    return {
+      subject: `Surveillance Suspension Intimation — ${company}`,
+      html: `
+        <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
+        <p>This is to inform you of a surveillance suspension intimation for
+        <strong>${company}</strong>.</p>
+        <p><strong>The suspension intimation letter is attached to this email.</strong></p>
+        <p>Please log in to your portal to review.</p>
+        <p>Regards,<br/>TWE Surveillance Team</p>
+      `,
+    };
+  },
+
+  surveillance_suspension_letter: (data) => {
+    const company = data.companyName || 'your organization';
+    return {
+      subject: `Surveillance Suspension Letter — ${company}`,
+      html: `
+        <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
+        <p>This is to inform you that a surveillance suspension letter has been issued for
+        <strong>${company}</strong>.</p>
+        <p><strong>The suspension letter is attached to this email.</strong></p>
+        <p>Please log in to your portal to review.</p>
+        <p>Regards,<br/>TWE Surveillance Team</p>
+      `,
+    };
+  },
+
+  surveillance_withdrawal_intimation: (data) => {
+    const company = data.companyName || 'your organization';
+    return {
+      subject: `Surveillance Withdrawal Intimation — ${company}`,
+      html: `
+        <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
+        <p>This is to inform you of a surveillance withdrawal intimation for
+        <strong>${company}</strong>.</p>
+        <p><strong>The withdrawal intimation letter is attached to this email.</strong></p>
+        <p>Please log in to your portal to review.</p>
+        <p>Regards,<br/>TWE Surveillance Team</p>
+      `,
+    };
+  },
+
+  surveillance_withdrawal_letter: (data) => {
+    const company = data.companyName || 'your organization';
+    return {
+      subject: `Surveillance Withdrawal Letter — ${company}`,
+      html: `
+        <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
+        <p>This is to inform you that a surveillance withdrawal letter has been issued for
+        <strong>${company}</strong>.</p>
+        <p><strong>The withdrawal letter is attached to this email.</strong></p>
+        <p>Please log in to your portal to review.</p>
+        <p>Regards,<br/>TWE Surveillance Team</p>
+      `,
+    };
+  },
+
+  // Recertification Sprint 0 — see
+  // UAF New Changes/New Help Doc/Recertification/00_Sprint_Plan.md
+  recertification_intimation: (data) => {
+    const company = data.companyName || 'your organization';
+    return {
+      subject: `Recertification Audit Intimation — ${company}`,
+      html: `
+        <p>Dear ${data.contactPerson || 'Sir/Madam'},</p>
+        <p>This is to inform you that a recertification audit record has been created for
+        <strong>${company}</strong>. ${data.hasLetter
+          ? 'The recertification intimation letter has been attached to your record.'
+          : 'The recertification intimation letter will follow shortly.'}</p>
+        <p>Please log in to your portal to review and respond.</p>
+        <p>Regards,<br/>TWE Recertification Team</p>
       `,
     };
   },
@@ -44,7 +128,7 @@ const TEMPLATES: Record<string, TemplateBuilder> = {
 
 export async function POST(req: NextRequest) {
   try {
-    const { to, template, data } = await req.json();
+    const { to, template, data, attachmentUrl } = await req.json();
 
     if (!to || !template) {
       return NextResponse.json({ success: false, message: 'Missing to or template' }, { status: 200 });
@@ -66,13 +150,43 @@ export async function POST(req: NextRequest) {
 
     const { subject, html } = build(data || {});
 
+    // Build email payload with optional attachments
+    interface EmailPayload {
+      from: string;
+      to: string;
+      subject: string;
+      html: string;
+      attachments?: Array<{
+        filename: string;
+        content: string;
+      }>;
+    }
+
+    const emailPayload: EmailPayload = { from, to, subject, html };
+
+    // If attachmentUrl provided, fetch the file and encode as base64 for attachment
+    if (attachmentUrl) {
+      try {
+        const fileResp = await fetch(attachmentUrl);
+        if (fileResp.ok) {
+          const buffer = await fileResp.arrayBuffer();
+          const base64 = Buffer.from(buffer).toString('base64');
+          const filename = attachmentUrl.split('/').pop()?.split('?')[0] || 'attachment';
+          emailPayload.attachments = [{ filename, content: base64 }];
+        }
+      } catch (err) {
+        console.warn('notifications/send: Failed to fetch attachment:', err);
+        // Continue without attachment — non-blocking failure
+      }
+    }
+
     const resp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from, to, subject, html }),
+      body: JSON.stringify(emailPayload),
     });
 
     const result = await resp.json().catch(() => ({}));

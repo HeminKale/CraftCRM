@@ -228,7 +228,11 @@ export default function UserManagement({ tenant }: HomeTabProps) {
         p_first_name: inviteForm.first_name.trim(),
         p_last_name: inviteForm.last_name.trim(),
         p_role: inviteForm.role,
-        p_department: inviteForm.department.trim() || null
+        p_department: inviteForm.department.trim() || null,
+        // Previously captured in this form but never sent — migration 270
+        // fixes the RPC/table/accept_invitation chain to actually persist
+        // and apply it; this is the frontend half of that fix.
+        p_custom_role_id: inviteForm.custom_role_id || null
       });
 
       if (error) { toast.error(error.message || 'Failed to invite user'); return; }

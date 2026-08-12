@@ -15,16 +15,28 @@ interface Attachment {
   created_at: string;
 }
 
+// Reported back to onUploadComplete for the LAST successfully uploaded file
+// in a batch — lets a caller that cares (e.g. an email-on-upload hook) sign
+// a fresh URL for it without a second round-trip to re-fetch the record.
+// Additive only: every existing 0-arg caller (`() => ...`) stays valid.
+export interface UploadedFileInfo {
+  fieldName: string;
+  bucket: string;
+  path: string;
+  filename: string;
+}
+
 interface FileUploadFieldProps {
   objectId: string;
   fieldId: string;
+  fieldName?: string;         // raw field name (no __a), needed for UploadedFileInfo
   fieldLabel: string;
   recordId: string | null;    // null = new record (upload deferred)
   multiple?: boolean;         // true = 'files' type, false = 'file' type
   disabled?: boolean;
   readOnly?: boolean;
   companyName?: string;       // prefixed onto downloaded filename
-  onUploadComplete?: () => void; // notify parent to re-fetch recordData (e.g. status__a auto-advance)
+  onUploadComplete?: (info?: UploadedFileInfo) => void; // notify parent to re-fetch recordData (e.g. status__a auto-advance); info is the last successfully uploaded file, when known
 }
 
 const BUCKET = 'tenant-uploads';
@@ -49,6 +61,7 @@ function fileIcon(mimeType: string | null): string {
 export default function FileUploadField({
   objectId,
   fieldId,
+  fieldName,
   fieldLabel,
   recordId,
   multiple = false,
@@ -100,6 +113,7 @@ export default function FileUploadField({
 
     setUploading(true);
     let successCount = 0;
+    let lastUploaded: UploadedFileInfo | undefined;
 
     for (const file of filesToUpload) {
       try {
@@ -143,6 +157,9 @@ export default function FileUploadField({
         }
 
         successCount++;
+        if (fieldName) {
+          lastUploaded = { fieldName, bucket: bucket || BUCKET, path: storage_path, filename: file.name };
+        }
       } catch (err: any) {
         toast.error(`Error uploading ${file.name}: ${err.message}`);
       }
@@ -151,7 +168,7 @@ export default function FileUploadField({
     if (successCount > 0) {
       toast.success(`${successCount} file${successCount > 1 ? 's' : ''} uploaded`);
       await loadAttachments();
-      onUploadComplete?.();
+      onUploadComplete?.(lastUploaded);
     }
 
     setUploading(false);

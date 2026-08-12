@@ -7,12 +7,14 @@ import { usePermissions } from '../../providers/PermissionsProvider';
 import { UniversalFieldDisplay, formatColumnLabel } from '../ui/UniversalFieldDisplay';
 import CustomTabRenderer from './CustomTabRenderer';
 import { draftToClientService } from '../../services/DraftToClientService';
-import FileUploadField from './FileUploadField';
+import FileUploadField, { type UploadedFileInfo } from './FileUploadField';
 import ClientWorkflowBar from '../custom/External_Client/ClientWorkflowBar';
 import ReviewActionPanel from '../custom/External_Client/ReviewActionPanel';
 import StageAuditActionPanel from '../custom/External_Client/StageAuditActionPanel';
 import RenewalWorkflowBar from '../custom/Renewal_Client/RenewalWorkflowBar';
 import RenewalActionPanel from '../custom/Renewal_Client/RenewalActionPanel';
+import RecertificationWorkflowBar from '../custom/Recertification_Client/RecertificationWorkflowBar';
+import RecertificationActionPanel from '../custom/Recertification_Client/RecertificationActionPanel';
 import toast from 'react-hot-toast';
 import { useUserMap, resolveUserValue } from '../../hooks/useUserMap';
 
@@ -127,10 +129,32 @@ const SURV_STATUS_ORDER: string[] = [
   'Surv_Closed', 'CDC_Approved', 'Certificate_Issued',
 ];
 
+// Recertification (recertification_clients__a) — Sprint 5, same lock
+// mechanism as Surveillance 1's SURV_STATUS_ORDER above, applied to
+// recert_audit_report per the sprint plan's explicit "build the client-
+// visibility lock in from the start" note (Surveillance 1 missed this on
+// its first pass and needed a follow-up audit to catch it — not repeating
+// that gap here). Kept as its OWN array for the same reason SURV_STATUS_ORDER
+// is its own array, not appended to it or STAGE_STATUS_ORDER: 'Team_Assigned'
+// is a real status__a value on ALL THREE objects now, so a shared array
+// would silently rank Recertification's 'Team_Assigned' at whichever other
+// object's position for that name happened to be defined first — harmless
+// today, a landmine the next time this threshold check is touched.
+const RECERT_STATUS_ORDER: string[] = [
+  'Recert_Intimation_Sent', 'Recert_Application_Sent', 'Recert_Application_Accepted',
+  'Recert_Quotation_Received', 'Recert_Agreement_Sent', 'Recert_Agreement_Signed',
+  'Recert_Team_Assigned', 'Recert_Plan_Sent', 'Recert_Plan_Accepted',
+  'Recert_NCR_Sent', 'Recert_NCR_RCA_Uploaded', 'Recert_Auditor_Accepted',
+  'Recert_Evidences_Uploaded', 'Recert_Evidences_Accepted',
+  'Recert_Report_Sent', 'Recert_Tech_Findings_Given', 'Recert_Closed',
+  'Recert_CDC_Approved', 'Recert_Certificate_Issued',
+];
+
 const STAGE_REPORT_UNLOCK_AT: Record<string, { order: string[]; unlockAt: string }> = {
   stage1_report:             { order: STAGE_STATUS_ORDER, unlockAt: 'Stage1_Tech_Findings_Given' },
   stage2_report:             { order: STAGE_STATUS_ORDER, unlockAt: 'Stage2_Tech_Findings_Given' },
   surveillance_audit_report: { order: SURV_STATUS_ORDER,  unlockAt: 'Surv_Tech_Findings_Given' },
+  recert_audit_report:       { order: RECERT_STATUS_ORDER, unlockAt: 'Recert_Tech_Findings_Given' },
 };
 
 const isStageReportLockedForClient = (fieldName: string, recordData: RecordData | null, currentUserId?: string): boolean => {
@@ -188,6 +212,49 @@ const RENEWAL_FILE_FIELD_UPLOAD_ROLE: Record<string, FileUploadRule> = {
   surv_ncr_rca:                   'client_only',
   surv_tech_findings_file:        'tech_only',
   cdc_report:                     'cdc_only',
+  // Sprint 8 — Suspension & Withdrawal. Server-side twin lives in
+  // supabase/migrations/278_surv_suspension_withdrawal_start_upload.sql.
+  surv_suspension_intimation:     'crm_only',
+  surv_suspension_decision:       'cdc_only',
+  surv_suspension_letter:         'crm_only',
+  surv_withdrawal_intimation:     'crm_only',
+  surv_withdrawal_decision:       'cdc_only',
+  surv_withdrawal_letter:         'crm_only',
+};
+
+// Sprint 8 — the four CRM-uploaded fields whose upload triggers an email to
+// the linked client (the two CDC-uploaded decision fields never trigger an
+// email, confirmed — only rows with "get email" in the Client column of the
+// rights matrix send mail). Field name → the notifications/send template
+// name (see app/api/notifications/send/route.ts).
+const RENEWAL_EMAIL_ON_UPLOAD_FIELDS: Record<string, string> = {
+  surv_suspension_intimation: 'surveillance_suspension_intimation',
+  surv_suspension_letter:     'surveillance_suspension_letter',
+  surv_withdrawal_intimation: 'surveillance_withdrawal_intimation',
+  surv_withdrawal_letter:     'surveillance_withdrawal_letter',
+};
+
+// Recertification (recertification_clients__a) — Sprint 5. Server-side twin
+// lives across migrations 264/265/266/267/268's start_file_upload blocks;
+// this is the matching frontend hard floor, same reasoning as
+// RENEWAL_FILE_FIELD_UPLOAD_ROLE's header above. A THIRD, entirely
+// independent map — never merged with either map above, selected by object
+// identity at the call site only. Four more entries than Surveillance 1's
+// map (application form, quotation, agreement, evidences) — the intake and
+// evidences checkpoints Surveillance 1 doesn't have.
+const RECERT_FILE_FIELD_UPLOAD_ROLE: Record<string, FileUploadRule> = {
+  recert_intimation_letter: 'crm_only',
+  recert_application_form:  'client_only',
+  recert_quotation:         'crm_only',
+  recert_agreement:         'crm_only',
+  recert_audit_plan:        'crm_or_auditor',
+  recert_ncr:               'crm_or_auditor',
+  recert_ncr_rca:           'client_only',
+  recert_evidences:         'client_only',
+  recert_audit_report:      'crm_or_auditor',
+  recert_tech_findings_file:'tech_only',
+  recert_cdc_report:        'cdc_only',
+  recert_certificates:      'crm_only',
 };
 
 const isFileUploadAllowedForRole = (
@@ -197,8 +264,13 @@ const isFileUploadAllowedForRole = (
   userRole: string | undefined,
   customRoleName: string | null,
   isRenewalObject: boolean,
+  isRecertObject: boolean = false,
 ): boolean => {
-  const rule = (isRenewalObject ? RENEWAL_FILE_FIELD_UPLOAD_ROLE : EXTERNAL_CLIENT_FILE_FIELD_UPLOAD_ROLE)[fieldName];
+  const rule = (
+    isRecertObject ? RECERT_FILE_FIELD_UPLOAD_ROLE :
+    isRenewalObject ? RENEWAL_FILE_FIELD_UPLOAD_ROLE :
+    EXTERNAL_CLIENT_FILE_FIELD_UPLOAD_ROLE
+  )[fieldName];
   if (!rule) return true; // not one of the hard-floored fields — Permission Set decides alone
 
   if (userRole === 'admin') return true;
@@ -1041,6 +1113,16 @@ export default function RecordDetailView({
 
   // Format field value for display
   const formatFieldValue = (value: any, fieldType: string, fieldName?: string): string => {
+    // Date/timestamptz: show a placeholder date format instead of "-" when
+    // empty, and never "Invalid Date" — new Date('') doesn't throw, so the
+    // old try/catch below never caught it and .toLocaleDateString() on an
+    // Invalid Date literally returns the string "Invalid Date".
+    if (fieldType === 'date' || fieldType === 'timestamptz') {
+      if (value === null || value === undefined || value === '') return 'm/d/yyyy';
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? 'm/d/yyyy' : d.toLocaleDateString();
+    }
+
     if (value === null || value === undefined) return '-';
 
     // Resolve user UUID → display name for audit, owner, and user-lookup fields
@@ -1054,9 +1136,6 @@ export default function RecordDetailView({
     switch (fieldType) {
       case 'boolean':
         return value ? 'Yes' : 'No';
-      case 'date':
-      case 'timestamptz':
-        try { return new Date(value).toLocaleDateString(); } catch { return String(value); }
       case 'decimal':
       case 'money':
         return typeof value === 'number' ? value.toLocaleString() : value;
@@ -1072,6 +1151,52 @@ export default function RecordDetailView({
       }
       default:
         return String(value);
+    }
+  };
+
+  // Sprint 8 — fires a "get email" notification when one of the four
+  // CRM-uploaded Suspension/Withdrawal fields is uploaded on a renewal
+  // record. Called from every FileUploadField's onUploadComplete on this
+  // page; safe to call for any object/field — it's a no-op unless
+  // isRenewalObject is true AND the field is in RENEWAL_EMAIL_ON_UPLOAD_FIELDS.
+  // Same soft-failure philosophy as every other notification in this epic:
+  // failure is a toast warning only, never blocks the upload that already
+  // succeeded by the time this runs.
+  const maybeSendRenewalUploadEmail = async (info?: UploadedFileInfo) => {
+    if (!info) return;
+    const isRenewalObject = objectLabel?.toLowerCase().includes('renewal') ?? false;
+    if (!isRenewalObject) return;
+
+    const template = RENEWAL_EMAIL_ON_UPLOAD_FIELDS[info.fieldName];
+    if (!template) return; // not one of the four email-triggering fields
+
+    const recipient = recordData?.['email__a'];
+    if (!recipient) return; // no email on file for this record — nothing to send to
+
+    try {
+      const { data: signedData, error: signErr } = await supabase.storage
+        .from(info.bucket)
+        .createSignedUrl(info.path, 300); // 5 min — just enough for the API route to fetch it
+      if (signErr || !signedData?.signedUrl) return;
+
+      const companyLabel = recordData?.['company_name__a'] || recordData?.['name'] || undefined;
+
+      const res = await fetch('/api/notifications/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: recipient,
+          template,
+          data: { companyName: companyLabel },
+          attachmentUrl: signedData.signedUrl,
+        }),
+      });
+      const result = await res.json().catch(() => null);
+      if (!result?.success) {
+        toast('File uploaded, but the notification email was not sent.', { icon: '⚠️' });
+      }
+    } catch {
+      toast('File uploaded, but the notification email was not sent.', { icon: '⚠️' });
     }
   };
 
@@ -1213,11 +1338,12 @@ export default function RecordDetailView({
         <FileUploadField
           objectId={objectId}
           fieldId={field.id}
+          fieldName={field.name}
           fieldLabel={field.label}
           recordId={recordId}
           multiple={field.type === 'files'}
           companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
-          onUploadComplete={() => setRefreshKey(k => k + 1)}
+          onUploadComplete={(info) => { setRefreshKey(k => k + 1); maybeSendRenewalUploadEmail(info); }}
         />
       );
     }
@@ -1461,15 +1587,20 @@ export default function RecordDetailView({
                                         <FileUploadField
                                           objectId={objectId}
                                           fieldId={field.id}
+                                          fieldName={field.name}
                                           fieldLabel={field.label}
                                           recordId={recordId}
                                           multiple={field.type === 'files'}
                                           readOnly={
                                             !can('edit', 'field', field.id) ||
-                                            !isFileUploadAllowedForRole(field.name, recordData, user?.id, userProfile?.role, customRoleName, objectLabel?.toLowerCase().includes('renewal') ?? false)
+                                            !isFileUploadAllowedForRole(
+                                              field.name, recordData, user?.id, userProfile?.role, customRoleName,
+                                              objectLabel?.toLowerCase().includes('renewal') ?? false,
+                                              objectLabel?.toLowerCase().includes('recertification') ?? false,
+                                            )
                                           }
                                           companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
-                                          onUploadComplete={() => setRefreshKey(k => k + 1)}
+                                          onUploadComplete={(info) => { setRefreshKey(k => k + 1); maybeSendRenewalUploadEmail(info); }}
                                         />
                                       )
                                     ) : isEditing && can('edit', 'field', field.id) ? (
@@ -1841,6 +1972,28 @@ export default function RecordDetailView({
             recordData={recordData}
           />
           <RenewalActionPanel
+            recordId={recordId}
+            recordData={recordData}
+            objectId={objectId}
+            currentUserRole={userProfile?.role || 'user'}
+            currentCustomRole={customRoleName}
+            currentUserId={user?.id || ''}
+            tenantId={tenant?.id}
+            onActionComplete={() => setRefreshKey(k => k + 1)}
+          />
+        </>
+      )}
+
+      {/* Workflow bar + Action panel — only for Recertification Clients
+          object. Own conditional block, own components — never merged with
+          the Renewal block above even though both follow the same shape. */}
+      {objectLabel?.toLowerCase().includes('recertification') && recordData && (
+        <>
+          <RecertificationWorkflowBar
+            status={recordData['status__a'] ?? null}
+            recordData={recordData}
+          />
+          <RecertificationActionPanel
             recordId={recordId}
             recordData={recordData}
             objectId={objectId}

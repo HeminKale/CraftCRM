@@ -11,45 +11,43 @@ interface WorkflowStage {
 }
 
 // Single unified pipeline — one dot per status__a value, in order. Mirrors
-// ClientWorkflowBar.tsx's pattern (External Client epic): this array is the
-// display-side mirror of the status__a picklist registered in migrations
-// 257/258/260/277, same values/order, so the edit-mode dropdown and this bar
-// never disagree. Extended through Withdrawal Letter Sent as of Sprint 8
-// (migration 277) — Suspension/Withdrawal were out of scope through Sprint 6
-// but are now built (see 00_Sprint_Plan.md, Sprint 8).
+// RenewalWorkflowBar.tsx's pattern exactly: this array is the display-side
+// mirror of the status__a picklist registered across migrations 264-268,
+// same values/order, so the edit-mode dropdown and this bar never disagree.
+// Built through Certificate Issue only — this matrix has no Suspension/
+// Withdrawal rows at all (see 00_Sprint_Plan.md), so there's no equivalent
+// boundary question Renewal had.
 //
-// The pre-epic legacy statuses (Audit_Plan_Sent, Audit_Plan_Accepted,
-// Renewal_Complete — registered for history in migration 257) are
-// deliberately NOT listed here, same as External Client's retired statuses
-// are excluded from its STAGES array. A record still carrying one of those
-// falls through to the date-driven fallback below.
+// 19 stages — six more than Surveillance 1's 13, driven entirely by the
+// intake phase (Application/Quotation/Agreement, rows 2-6) and the
+// Evidences checkpoint (row 13) Surveillance 1 doesn't have.
 const STAGES: WorkflowStage[] = [
-  { label: 'Intimation Sent',        dateKey: 'intimation_sent_date__a',         statusValue: 'Intimation_Sent'        },
-  { label: 'Intimation Accepted',    dateKey: 'intimation_accepted_date__a',     statusValue: 'Intimation_Accepted'    },
-  { label: 'Team Assigned',          dateKey: 'team_assigned_date__a',           statusValue: 'Team_Assigned'          },
-  { label: 'Audit Plan Sent',        dateKey: 'surv_plan_sent_date__a',          statusValue: 'Surv_Plan_Sent'         },
-  { label: 'Audit Plan Accepted',    dateKey: 'surv_plan_accepted_date__a',      statusValue: 'Surv_Plan_Accepted'     },
-  { label: 'NCR Sent',               dateKey: 'surv_ncr_sent_date__a',           statusValue: 'Surv_NCR_Sent'          },
-  { label: 'NCR + RCA Uploaded',     dateKey: 'surv_ncr_rca_uploaded_date__a',   statusValue: 'Surv_NCR_RCA_Uploaded'  },
-  { label: 'NCR + RCA Accepted',     dateKey: 'surv_auditor_accepted_date__a',   statusValue: 'Surv_Auditor_Accepted'  },
-  { label: 'Audit Report Sent',      dateKey: 'surv_report_sent_date__a',        statusValue: 'Surv_Report_Sent'       },
-  { label: 'Tech Review Passed',     dateKey: 'surv_tech_findings_date__a',      statusValue: 'Surv_Tech_Findings_Given' },
-  { label: 'Audit Closed',           dateKey: 'surv_closed_date__a',             statusValue: 'Surv_Closed'            },
-  { label: 'CDC Approved',           dateKey: 'cdc_date__a',                     statusValue: 'CDC_Approved'           },
-  { label: 'Certificate Issued',     dateKey: 'certificates_sent_date__a',       statusValue: 'Certificate_Issued'     },
-  // Sprint 8 — Suspension & Withdrawal (migration 277)
-  { label: 'Suspension Intimation',  dateKey: 'surv_suspension_intimation_date__a', statusValue: 'Suspension_Intimation_Sent'   },
-  { label: 'Suspension Decision',    dateKey: 'surv_suspension_decision_date__a',   statusValue: 'Suspension_Decision_Uploaded' },
-  { label: 'Suspension Letter',      dateKey: 'surv_suspension_letter_date__a',     statusValue: 'Suspension_Letter_Sent'       },
-  { label: 'Withdrawal Intimation',  dateKey: 'surv_withdrawal_intimation_date__a', statusValue: 'Withdrawal_Intimation_Sent'   },
-  { label: 'Withdrawal Decision',    dateKey: 'surv_withdrawal_decision_date__a',   statusValue: 'Withdrawal_Decision_Uploaded' },
-  { label: 'Withdrawal Letter',      dateKey: 'surv_withdrawal_letter_date__a',     statusValue: 'Withdrawal_Letter_Sent'       },
+  { label: 'Intimation Sent',        dateKey: 'recert_intimation_sent_date__a',     statusValue: 'Recert_Intimation_Sent'      },
+  { label: 'Application Sent',       dateKey: 'recert_application_sent_date__a',    statusValue: 'Recert_Application_Sent'     },
+  { label: 'Application Accepted',   dateKey: 'recert_application_accepted_date__a',statusValue: 'Recert_Application_Accepted' },
+  { label: 'Quotation Received',     dateKey: 'recert_quotation_received_date__a',  statusValue: 'Recert_Quotation_Received'   },
+  { label: 'Agreement Sent',         dateKey: 'recert_agreement_sent_date__a',      statusValue: 'Recert_Agreement_Sent'       },
+  { label: 'Agreement Signed',       dateKey: 'recert_agreement_signed_date__a',    statusValue: 'Recert_Agreement_Signed'     },
+  { label: 'Team Assigned',          dateKey: 'recert_team_assigned_date__a',       statusValue: 'Recert_Team_Assigned'        },
+  { label: 'Audit Plan Sent',        dateKey: 'recert_plan_sent_date__a',           statusValue: 'Recert_Plan_Sent'            },
+  { label: 'Audit Plan Accepted',    dateKey: 'recert_plan_accepted_date__a',       statusValue: 'Recert_Plan_Accepted'        },
+  { label: 'NCR Sent',               dateKey: 'recert_ncr_sent_date__a',            statusValue: 'Recert_NCR_Sent'             },
+  { label: 'NCR + RCA Uploaded',     dateKey: 'recert_ncr_rca_uploaded_date__a',    statusValue: 'Recert_NCR_RCA_Uploaded'     },
+  { label: 'NCR + RCA Accepted',     dateKey: 'recert_auditor_accepted_date__a',    statusValue: 'Recert_Auditor_Accepted'     },
+  { label: 'Evidences Uploaded',     dateKey: 'recert_evidences_uploaded_date__a',  statusValue: 'Recert_Evidences_Uploaded'   },
+  { label: 'Evidences Accepted',     dateKey: 'recert_evidences_accepted_date__a',  statusValue: 'Recert_Evidences_Accepted'   },
+  { label: 'Audit Report Sent',      dateKey: 'recert_report_sent_date__a',         statusValue: 'Recert_Report_Sent'          },
+  { label: 'Tech Review Passed',     dateKey: 'recert_tech_findings_date__a',       statusValue: 'Recert_Tech_Findings_Given'  },
+  { label: 'Audit Closed',           dateKey: 'recert_closed_date__a',              statusValue: 'Recert_Closed'               },
+  { label: 'CDC Approved',           dateKey: 'recert_cdc_date__a',                 statusValue: 'Recert_CDC_Approved'         },
+  { label: 'Certificate Issued',     dateKey: 'recert_certificates_sent_date__a',   statusValue: 'Recert_Certificate_Issued'   },
 ];
 
 // How many stages to show either side of the current one when the full list
 // doesn't fit — current-3 … current … current+3, so a 7-wide window. Same
-// radius as ClientWorkflowBar (23 stages there); built in from the start
-// here at 13 stages rather than retrofitting once it grows further.
+// radius as both prior epics' bars (ClientWorkflowBar at 23 stages,
+// RenewalWorkflowBar at 13) — built in from the start here at 19 stages
+// rather than retrofitting once it grows further.
 const WINDOW_RADIUS = 3;
 const WINDOW_SIZE = WINDOW_RADIUS * 2 + 1;
 
@@ -169,11 +167,11 @@ function StageTrack({ stages, offset, currentIdx, total, recordData }: {
 }
 
 interface Props {
-  status: string | null;
+  status?: string | null;
   recordData: Record<string, any>;
 }
 
-export default function RenewalWorkflowBar({ recordData }: Props) {
+export default function RecertificationWorkflowBar({ recordData }: Props) {
   const currentIdx = resolveCurrentStageIndex(recordData);
   const total = STAGES.length;
 
@@ -198,7 +196,7 @@ export default function RenewalWorkflowBar({ recordData }: Props) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg px-6 py-5 mb-4">
       <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">
-        Surveillance 1 Progress
+        Recertification Progress
       </h3>
 
       <div className="flex items-center gap-2">

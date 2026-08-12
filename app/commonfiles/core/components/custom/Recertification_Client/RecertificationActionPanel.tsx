@@ -28,13 +28,20 @@ function hasFile(v: any): boolean {
   return false;
 }
 
-// Full Surveillance 1 checkpoint chain through Certificate Issue (row 15 of
-// the SURV1 rights matrix — Suspension/Withdrawal are out of scope for this
-// plan, see 00_Sprint_Plan.md). Mirrors StageAuditActionPanel.tsx's shape
-// throughout: one role-gated conditional block per checkpoint, generic
-// accept/reject handler shared across every review panel, hard exclusion of
-// the record's own linked client from any CRM/Auditor/Tech/CDC-only panel.
-export default function RenewalActionPanel({
+// Full Recertification checkpoint chain through Certificate Issue (row 18 of
+// the Recertification rights matrix — this matrix has no Suspension/
+// Withdrawal rows at all, see 00_Sprint_Plan.md). Copies
+// RenewalActionPanel.tsx's structure throughout: one role-gated conditional
+// block per checkpoint, generic accept/reject handler shared across every
+// review panel, hard exclusion of the record's own linked client from any
+// CRM/Auditor/Tech/CDC-only panel (built in from the start here — this is
+// what StageAuditActionPanel needed a live fix for, and RenewalActionPanel
+// already had it from day one).
+//
+// Six more checkpoints than Surveillance 1 (Application/Quotation/Agreement
+// intake + Evidences), all built in from Sprint 1/Sprint 3's RPCs — no
+// scope drift from the migrations already shipped.
+export default function RecertificationActionPanel({
   recordId,
   recordData,
   currentUserRole,
@@ -64,9 +71,8 @@ export default function RenewalActionPanel({
   const isAdmin      = currentUserRole === 'admin';
   // The linked client themselves — excluding admin. Hard-excludes them from
   // ever triggering a CRM/Auditor/Tech/CDC-only panel, regardless of what
-  // their custom role string happens to contain (same hardening
-  // StageAuditActionPanel needed after a live bug — built in from the start
-  // here instead).
+  // their custom role string happens to contain — same hardening
+  // RenewalActionPanel carries, built in here from the start.
   const isClientOnly = !isAdmin && currentUserId === clientUserId;
   const isCRM         = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('crm'));
   const isAuditor     = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('auditor'));
@@ -77,66 +83,80 @@ export default function RenewalActionPanel({
   const assignedAuditorId      = recordData['auditor_id__a'] || null;
   const assignedTechReviewerId = recordData['tech_reviewer_id__a'] || null;
 
-  const intimationUploaded = hasFile(recordData['surveillance_intimation_letter__a']);
-  const planUploaded       = hasFile(recordData['surv_audit_plan__a']);
+  const intimationUploaded  = hasFile(recordData['recert_intimation_letter__a']);
+  const applicationUploaded = hasFile(recordData['recert_application_form__a']);
+  const planUploaded        = hasFile(recordData['recert_audit_plan__a']);
 
-  const rejectionNotes        = recordData['rejection_notes__a'];          // legacy intimation reject
-  const planClientRemarks     = recordData['surv_plan_client_remarks__a'];
-  const rcaRejectionNotes     = recordData['surv_rca_rejection_notes__a'];
+  // rejection_notes__a is a SHARED field across review_recert_application and
+  // review_recert_agreement (migration 265's deliberate choice — matches the
+  // generic reject-notes convention already used on both prior objects).
+  // Both accept branches clear it, so no cross-checkpoint leakage in the
+  // normal linear flow.
+  const rejectionNotes         = recordData['rejection_notes__a'];
+  const planClientRemarks      = recordData['recert_plan_client_remarks__a'];
+  const rcaRejectionNotes      = recordData['recert_rca_rejection_notes__a'];
+  const evidencesRejectionNotes = recordData['recert_evidences_rejection_notes__a'];
 
   // ── Checkpoint visibility, one per rights-matrix row ─────────────
   const showIntimationPrompt = isCRM && !status && !intimationUploaded;
-  const showIntimationReview = isLinkedClient && status === 'Intimation_Sent';
 
-  const showAssignTeamPrompt = isCRM && status === 'Intimation_Accepted';
-  // Per the SURV1 rights matrix, CDC also has "view" on the assign-team row
-  // (unlike External Client's equivalent strip, which the rights matrix
-  // there never gave CDC visibility on) — included here from the start.
+  // Client uploads the application form — reappears after a CRM rejection
+  // (review_recert_application's reject branch stays on
+  // Recert_Application_Sent + notes, not a status step-back — migration 265).
+  const showApplicationPrompt = isLinkedClient &&
+    (status === 'Recert_Intimation_Sent' || (status === 'Recert_Application_Sent' && !!rejectionNotes));
+  const showApplicationReview = isCRM && status === 'Recert_Application_Sent' && applicationUploaded;
+
+  const showQuotationPrompt      = isCRM && status === 'Recert_Application_Accepted';
+  // Reappears after the client rejects the agreement — review_recert_agreement's
+  // reject branch steps back to Recert_Quotation_Received (migration 265), so
+  // this single status check already covers both the first upload and the
+  // post-reject revision, no separate "with remarks" branch needed.
+  const showAgreementUploadPrompt = isCRM && status === 'Recert_Quotation_Received';
+  const showAgreementReviewPanel  = isLinkedClient && status === 'Recert_Agreement_Sent';
+
+  const showAssignTeamPrompt = isCRM && status === 'Recert_Agreement_Signed';
+  // Per the rights matrix, CDC also has "view" on the assign-team row —
+  // included here from the start (Surveillance 1 missed this on its first
+  // pass and needed a follow-up fix).
   const showAssignedTeamInfo = (isCRM || isAuditor || isTech || isCdc) &&
     !!(assignedAuditorId && assignedTechReviewerId);
 
   // Plan upload reappears after a client rejection, so CRM/Auditor can revise.
   const showPlanUploadPrompt = (isCRM || isAuditor) &&
-    (status === 'Team_Assigned' || (status === 'Surv_Plan_Sent' && !!planClientRemarks));
-  const showPlanReviewPanel  = isLinkedClient && status === 'Surv_Plan_Sent' && planUploaded;
+    (status === 'Recert_Team_Assigned' || (status === 'Recert_Plan_Sent' && !!planClientRemarks));
+  const showPlanReviewPanel  = isLinkedClient && status === 'Recert_Plan_Sent' && planUploaded;
 
-  const showAuditPrepPrompt  = (isCRM || isAuditor) && status === 'Surv_Plan_Accepted';
-  const showRcaUploadPrompt  = isLinkedClient && status === 'Surv_NCR_Sent';
-  // Auditor only — deliberately NOT (isAuditor || isCRM), unlike External
-  // Client's equivalent panel. review_surv_ncr_rca's RPC gate has no CRM
-  // bypass (confirmed decision, Sprint 2) — CRM is view-only on this row per
-  // the SURV1 rights matrix, so CRM must never see buttons that would just
-  // fail on click.
-  const showRcaReviewPanel   = isAuditor && status === 'Surv_NCR_RCA_Uploaded';
+  const showAuditPrepPrompt = (isCRM || isAuditor) && status === 'Recert_Plan_Accepted';
+  const showRcaUploadPrompt = isLinkedClient && status === 'Recert_NCR_Sent';
+  // Auditor only — deliberately NOT (isAuditor || isCRM). review_recert_ncr_rca's
+  // RPC gate has no CRM bypass (confirmed decision, Sprint 3) — CRM is
+  // view-only on this row per the rights matrix, so CRM must never see
+  // buttons that would just fail on click.
+  const showRcaReviewPanel  = isAuditor && status === 'Recert_NCR_RCA_Uploaded';
 
-  const showReportPrompt     = (isCRM || isAuditor) && status === 'Surv_Auditor_Accepted';
-  const showFindingsPanel    = isTech && status === 'Surv_Report_Sent';
-  const showClosurePanel     = isAuditor && status === 'Surv_Tech_Findings_Given';
-  const showCdcUploadPrompt  = isCdc && status === 'Surv_Closed';
-  const showCertificatePrompt = isCRM && status === 'CDC_Approved';
+  // Evidences reappears after an Auditor rejection — review_recert_evidences's
+  // reject branch steps back to Recert_Auditor_Accepted (migration 267), the
+  // same status this prompt already fires at, so no separate branch needed.
+  const showEvidencesUploadPrompt = isLinkedClient && status === 'Recert_Auditor_Accepted';
+  // Auditor only, same no-CRM-bypass reasoning as the RCA review above.
+  const showEvidencesReviewPanel  = isAuditor && status === 'Recert_Evidences_Uploaded';
 
-  // ── Sprint 8: Suspension & Withdrawal. Every one of these six rows is
-  // "upload IS the action" — no accept/reject buttons, just an instructional
-  // banner telling the uploading role to use the file field below, same
-  // shape as showCdcUploadPrompt/showCertificatePrompt above. Strictly
-  // linear sequencing, confirmed (00_Sprint_Plan.md Sprint 8) — each prompt
-  // requires exactly the prior checkpoint's status, matching the RPC-level
-  // gate in migration 278.
-  const showSuspensionIntimationPrompt = isCRM && status === 'Certificate_Issued';
-  const showSuspensionDecisionPrompt   = isCdc && status === 'Suspension_Intimation_Sent';
-  const showSuspensionLetterPrompt     = isCRM && status === 'Suspension_Decision_Uploaded';
-  const showWithdrawalIntimationPrompt = isCRM && status === 'Suspension_Letter_Sent';
-  const showWithdrawalDecisionPrompt   = isCdc && status === 'Withdrawal_Intimation_Sent';
-  const showWithdrawalLetterPrompt     = isCRM && status === 'Withdrawal_Decision_Uploaded';
+  const showReportPrompt      = (isCRM || isAuditor) && status === 'Recert_Evidences_Accepted';
+  const showFindingsPanel     = isTech && status === 'Recert_Report_Sent';
+  const showClosurePanel      = isAuditor && status === 'Recert_Tech_Findings_Given';
+  const showCdcUploadPrompt   = isCdc && status === 'Recert_Closed';
+  const showCertificatePrompt = isCRM && status === 'Recert_CDC_Approved';
 
-  const anyVisible = showIntimationPrompt || showIntimationReview ||
+  const anyVisible = showIntimationPrompt ||
+    showApplicationPrompt || showApplicationReview ||
+    showQuotationPrompt || showAgreementUploadPrompt || showAgreementReviewPanel ||
     showAssignTeamPrompt || showAssignedTeamInfo ||
     showPlanUploadPrompt || showPlanReviewPanel || showAuditPrepPrompt ||
     showRcaUploadPrompt || showRcaReviewPanel ||
+    showEvidencesUploadPrompt || showEvidencesReviewPanel ||
     showReportPrompt || showFindingsPanel || showClosurePanel ||
-    showCdcUploadPrompt || showCertificatePrompt ||
-    showSuspensionIntimationPrompt || showSuspensionDecisionPrompt || showSuspensionLetterPrompt ||
-    showWithdrawalIntimationPrompt || showWithdrawalDecisionPrompt || showWithdrawalLetterPrompt;
+    showCdcUploadPrompt || showCertificatePrompt;
 
   // ── Fetch Auditor/Tech Reviewer options — must run unconditionally,
   // before the "nothing to show" early return below, so hook count never
@@ -159,7 +179,7 @@ export default function RenewalActionPanel({
 
   // ── Nothing to show ──────────────────────────────────────────
   if (!anyVisible) {
-    const anyRemarks = rejectionNotes || planClientRemarks || rcaRejectionNotes;
+    const anyRemarks = rejectionNotes || planClientRemarks || rcaRejectionNotes || evidencesRejectionNotes;
     if (isAdmin && anyRemarks) {
       return (
         <div className="bg-red-50 border border-red-200 rounded-lg px-5 py-4 mb-4">
@@ -167,6 +187,7 @@ export default function RenewalActionPanel({
           {rejectionNotes && <p className="text-sm text-red-800">{rejectionNotes}</p>}
           {planClientRemarks && <p className="text-sm text-red-800 mt-1">{planClientRemarks}</p>}
           {rcaRejectionNotes && <p className="text-sm text-red-800 mt-1">{rcaRejectionNotes}</p>}
+          {evidencesRejectionNotes && <p className="text-sm text-red-800 mt-1">{evidencesRejectionNotes}</p>}
         </div>
       );
     }
@@ -181,7 +202,7 @@ export default function RenewalActionPanel({
     }
     setProcessing(true);
     try {
-      const { data, error } = await supabase.rpc('assign_surv_team', {
+      const { data, error } = await supabase.rpc('assign_recert_team', {
         p_record_id:        recordId,
         p_auditor_id:       selectedAuditorId,
         p_tech_reviewer_id: selectedTechReviewerId,
@@ -198,7 +219,7 @@ export default function RenewalActionPanel({
     }
   };
 
-  // ── Generic accept/reject (intimation, plan, RCA review) ─────────
+  // ── Generic accept/reject (application, agreement, plan, RCA, evidences) ──
   const handleReview = async (rpc: string, action: 'accept' | 'reject') => {
     if (action === 'reject' && mode === 'idle') { setRejectRpc(rpc); setMode('rejecting'); return; }
     setProcessing(true);
@@ -227,11 +248,11 @@ export default function RenewalActionPanel({
   // Notes optional: blank box = accept without findings, matching the
   // established "empty box = direct accept" trick. Deliberately does NOT
   // implement External Client's later revision-loop-back (migration 253) —
-  // not in the SURV1 rights matrix or the sprint plan for this object.
+  // not in this rights matrix or the sprint plan for this object.
   const handleSubmitFindings = async () => {
     setProcessing(true);
     try {
-      const { data, error } = await supabase.rpc('submit_surv_tech_findings', {
+      const { data, error } = await supabase.rpc('submit_recert_tech_findings', {
         p_record_id: recordId,
         p_notes:     findingsNotes.trim() || null,
       });
@@ -253,7 +274,7 @@ export default function RenewalActionPanel({
     if (!closureNotes.trim()) { toast.error('Please enter closure notes.'); return; }
     setProcessing(true);
     try {
-      const { data, error } = await supabase.rpc('close_surv_audit', {
+      const { data, error } = await supabase.rpc('close_recert_audit', {
         p_record_id:     recordId,
         p_closure_notes: closureNotes.trim(),
       });
@@ -304,10 +325,29 @@ export default function RenewalActionPanel({
         <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-semibold text-blue-900">Upload Surveillance Intimation Letter</p>
+              <p className="text-sm font-semibold text-blue-900">Upload Recertification Intimation Letter</p>
               <p className="text-xs text-blue-600 mt-0.5">
-                Upload the intimation letter using the <strong>Surveillance Intimation Letter</strong> field below.
+                Upload the intimation letter using the <strong>Recertification Intimation Letter</strong> field below.
                 Status will advance to <em>Intimation Sent</em> automatically.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
+              Action Required
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Linked Client: Upload Application Form ── */}
+      {showApplicationPrompt && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">
+                {rejectionNotes ? 'Revise Application Form' : 'Upload Application Form'}
+              </p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                Upload your recertification application using the <strong>Application Form</strong> field below.
               </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
@@ -322,26 +362,97 @@ export default function RenewalActionPanel({
         </div>
       )}
 
-      {/* ── Linked Client: Review Intimation Letter ── */}
-      {showIntimationReview && (
+      {/* ── CRM: Review Application Form ── */}
+      {showApplicationReview && (
         <div className="bg-purple-50 border border-purple-200 rounded-lg px-5 py-4">
           <div className="flex items-start justify-between mb-3">
             <div>
-              <p className="text-sm font-semibold text-purple-900">Review Surveillance Intimation</p>
+              <p className="text-sm font-semibold text-purple-900">Review Application Form</p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 shrink-0 ml-3">
-              Awaiting Your Response
+              Awaiting Review
             </span>
           </div>
           <div className="flex gap-3">
-            <button onClick={() => handleReview('review_surveillance_intimation', 'accept')} disabled={processing}
+            <button onClick={() => handleReview('review_recert_application', 'accept')} disabled={processing}
               className="px-5 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
               Accept
             </button>
-            <button onClick={() => handleReview('review_surveillance_intimation', 'reject')} disabled={processing}
+            <button onClick={() => handleReview('review_recert_application', 'reject')} disabled={processing}
+              className="px-5 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Reject
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── CRM: Upload Quotation (instruction) ── */}
+      {showQuotationPrompt && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">Upload Quotation</p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                Application accepted. Upload the <strong>Quotation</strong> using the field below.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
+              Next Step
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── CRM: Upload Client Agreement (instruction) ── */}
+      {showAgreementUploadPrompt && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">
+                {rejectionNotes ? 'Revise Client Agreement' : 'Upload Client Agreement'}
+              </p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                Upload the <strong>Client Agreement</strong> using the field below.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
+              {rejectionNotes ? 'Action Required' : 'Next Step'}
+            </span>
+          </div>
+          {rejectionNotes && (
+            <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              <span className="font-semibold">Previous rejection: </span>{rejectionNotes}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Linked Client: Accept and Sign Agreement ── */}
+      {showAgreementReviewPanel && (
+        <div className="bg-purple-50 border border-purple-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <p className="text-sm font-semibold text-purple-900">Review and Sign Client Agreement</p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 shrink-0 ml-3">
+              Awaiting Your Response
+            </span>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => handleReview('review_recert_agreement', 'accept')} disabled={processing}
+              className="px-5 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Accept &amp; Sign
+            </button>
+            <button onClick={() => handleReview('review_recert_agreement', 'reject')} disabled={processing}
               className="px-5 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -420,7 +531,7 @@ export default function RenewalActionPanel({
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-blue-900">
-                {planClientRemarks ? 'Revise Surveillance Audit Plan' : 'Upload Surveillance Audit Plan'}
+                {planClientRemarks ? 'Revise Recertification Audit Plan' : 'Upload Recertification Audit Plan'}
               </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
@@ -440,21 +551,21 @@ export default function RenewalActionPanel({
         <div className="bg-purple-50 border border-purple-200 rounded-lg px-5 py-4">
           <div className="flex items-start justify-between mb-3">
             <div>
-              <p className="text-sm font-semibold text-purple-900">Review Surveillance Audit Plan</p>
+              <p className="text-sm font-semibold text-purple-900">Review Recertification Audit Plan</p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 shrink-0 ml-3">
               Awaiting Your Response
             </span>
           </div>
           <div className="flex gap-3">
-            <button onClick={() => handleReview('review_surv_plan', 'accept')} disabled={processing}
+            <button onClick={() => handleReview('review_recert_plan', 'accept')} disabled={processing}
               className="px-5 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
               Accept
             </button>
-            <button onClick={() => handleReview('review_surv_plan', 'reject')} disabled={processing}
+            <button onClick={() => handleReview('review_recert_plan', 'reject')} disabled={processing}
               className="px-5 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -465,15 +576,14 @@ export default function RenewalActionPanel({
         </div>
       )}
 
-      {/* ── CRM/Auditor: Conduct Audit — enter date, upload NCR (instruction) ── */}
+      {/* ── CRM/Auditor: Conduct Audit — upload NCR (instruction) ── */}
       {showAuditPrepPrompt && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-semibold text-blue-900">Conduct Surveillance Audit</p>
+              <p className="text-sm font-semibold text-blue-900">Conduct Recertification Audit</p>
               <p className="text-xs text-blue-600 mt-0.5">
-                Plan accepted. Enter the <strong>Surveillance Audit Date</strong> and upload the{' '}
-                <strong>Surveillance NCR</strong> using the fields below.
+                Plan accepted. Upload the <strong>Recertification NCR</strong> using the field below.
               </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
@@ -514,14 +624,66 @@ export default function RenewalActionPanel({
             </span>
           </div>
           <div className="mt-4 flex gap-3">
-            <button onClick={() => handleReview('review_surv_ncr_rca', 'accept')} disabled={processing}
+            <button onClick={() => handleReview('review_recert_ncr_rca', 'accept')} disabled={processing}
               className="px-5 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
               Accept
             </button>
-            <button onClick={() => handleReview('review_surv_ncr_rca', 'reject')} disabled={processing}
+            <button onClick={() => handleReview('review_recert_ncr_rca', 'reject')} disabled={processing}
+              className="px-5 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Reject
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Linked Client: Upload Evidences (instruction) ── */}
+      {showEvidencesUploadPrompt && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">Upload Evidences</p>
+              <p className="text-xs text-blue-600 mt-0.5">
+                RCA accepted. Upload supporting evidences using the <strong>Evidences</strong> field below.
+              </p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
+              Action Required
+            </span>
+          </div>
+          {evidencesRejectionNotes && (
+            <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+              <span className="font-semibold">Auditor remarks: </span>{evidencesRejectionNotes}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Auditor ONLY: Review Evidences (no CRM bypass) ── */}
+      {showEvidencesReviewPanel && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-semibold text-blue-900">Review Evidences</p>
+            </div>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 shrink-0 ml-3">
+              Awaiting Review
+            </span>
+          </div>
+          <div className="mt-4 flex gap-3">
+            <button onClick={() => handleReview('review_recert_evidences', 'accept')} disabled={processing}
+              className="px-5 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Accept
+            </button>
+            <button onClick={() => handleReview('review_recert_evidences', 'reject')} disabled={processing}
               className="px-5 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -537,9 +699,9 @@ export default function RenewalActionPanel({
         <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm font-semibold text-blue-900">Upload Surveillance Audit Report</p>
+              <p className="text-sm font-semibold text-blue-900">Upload Recertification Audit Report</p>
               <p className="text-xs text-blue-600 mt-0.5">
-                RCA accepted. Upload the <strong>Surveillance Audit Report</strong> using the field below.
+                Evidences accepted. Upload the <strong>Audit Report</strong> using the field below.
               </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
@@ -589,7 +751,7 @@ export default function RenewalActionPanel({
         <div className="bg-purple-50 border border-purple-200 rounded-lg px-5 py-4">
           <div className="flex items-start justify-between mb-3">
             <div>
-              <p className="text-sm font-semibold text-purple-900">Close Surveillance Audit</p>
+              <p className="text-sm font-semibold text-purple-900">Close Recertification Audit</p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 shrink-0 ml-3">
               Ready to Close
@@ -625,122 +787,17 @@ export default function RenewalActionPanel({
         </div>
       )}
 
-      {/* ── CRM: Issue Certificate ── */}
+      {/* ── CRM: Issue Certificate (terminal step for this plan) ── */}
       {showCertificatePrompt && (
         <div className="bg-green-50 border border-green-200 rounded-lg px-5 py-4">
           <div className="flex items-start justify-between">
             <div>
               <p className="text-sm font-semibold text-green-900">Issue Certificate</p>
               <p className="text-xs text-green-600 mt-0.5">
-                CDC approved. Upload the <strong>Surveillance Certificates</strong> using the field below.
+                CDC approved. Upload the <strong>Certificates</strong> using the field below.
               </p>
             </div>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 shrink-0 ml-3">
-              Action Required
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ── Sprint 8: Suspension & Withdrawal — every row is "upload IS the
-          action," same instructional-banner shape as the two above. ── */}
-
-      {/* ── CRM: Suspension Intimation ── */}
-      {showSuspensionIntimationPrompt && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-5 py-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-semibold text-yellow-900">Upload Suspension Intimation</p>
-              <p className="text-xs text-yellow-600 mt-0.5">
-                Upload the <strong>Suspension Intimation</strong> letter using the field below. The client will be emailed the file automatically.
-              </p>
-            </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 shrink-0 ml-3">
-              Action Required
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ── CDC: Suspension Decision (upload IS the decision) ── */}
-      {showSuspensionDecisionPrompt && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-semibold text-blue-900">Upload Suspension Decision</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                Upload the <strong>Suspension Decision</strong> document using the field below.
-              </p>
-            </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
-              Action Required
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ── CRM: Suspension Letter ── */}
-      {showSuspensionLetterPrompt && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-5 py-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-semibold text-yellow-900">Upload Suspension Letter</p>
-              <p className="text-xs text-yellow-600 mt-0.5">
-                Upload the <strong>Suspension Letter</strong> using the field below. The client will be emailed the file automatically.
-              </p>
-            </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 shrink-0 ml-3">
-              Action Required
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ── CRM: Withdrawal Intimation ── */}
-      {showWithdrawalIntimationPrompt && (
-        <div className="bg-red-50 border border-red-200 rounded-lg px-5 py-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-semibold text-red-900">Upload Withdrawal Intimation</p>
-              <p className="text-xs text-red-600 mt-0.5">
-                Upload the <strong>Withdrawal Intimation</strong> letter using the field below. The client will be emailed the file automatically.
-              </p>
-            </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 shrink-0 ml-3">
-              Action Required
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ── CDC: Withdrawal Decision (upload IS the decision) ── */}
-      {showWithdrawalDecisionPrompt && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-semibold text-blue-900">Upload Withdrawal Decision</p>
-              <p className="text-xs text-blue-600 mt-0.5">
-                Upload the <strong>Withdrawal Decision</strong> document using the field below.
-              </p>
-            </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 shrink-0 ml-3">
-              Action Required
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ── CRM: Withdrawal Letter (terminal checkpoint) ── */}
-      {showWithdrawalLetterPrompt && (
-        <div className="bg-red-50 border border-red-200 rounded-lg px-5 py-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm font-semibold text-red-900">Upload Withdrawal Letter</p>
-              <p className="text-xs text-red-600 mt-0.5">
-                Upload the <strong>Withdrawal Letter</strong> using the field below. The client will be emailed the file automatically.
-              </p>
-            </div>
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 shrink-0 ml-3">
               Final Step
             </span>
           </div>

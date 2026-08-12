@@ -316,3 +316,8 @@ ssl/
 test_*.pdf
 test_*.docx
 test_*.xlsx
+
+# Claude Code & Local workspace
+.claude/
+.claude-backup/
+Craft 2_2.code-workspace
