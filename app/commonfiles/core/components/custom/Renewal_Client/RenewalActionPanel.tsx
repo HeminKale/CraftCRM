@@ -11,6 +11,7 @@ interface Props {
   currentUserRole: string;
   currentCustomRole: string | null;
   currentUserId: string;
+  currentUserEmail?: string;
   tenantId?: string;
   onActionComplete: () => void;
 }
@@ -40,6 +41,7 @@ export default function RenewalActionPanel({
   currentUserRole,
   currentCustomRole,
   currentUserId,
+  currentUserEmail,
   onActionComplete,
 }: Props) {
   const supabase = createClientComponentClient();
@@ -60,6 +62,14 @@ export default function RenewalActionPanel({
 
   const status       = recordData['status__a'] || null;
   const clientUserId = recordData['client_user_id__a'];
+  // The Surveillance 1 record's own Email field. Matching against this
+  // directly (instead of only the linked External Client's client_user_id__a)
+  // means a client can be recognized on this record even when the upstream
+  // External Client record was never linked to a login — the two emails are
+  // expected to match in practice, so this is a superset of the old check,
+  // never a narrower one. Mirrored server-side in migration 287.
+  const recordEmail  = lower(recordData['email__a']);
+  const isEmailMatch  = !!recordEmail && recordEmail === lower(currentUserEmail);
 
   const isAdmin      = currentUserRole === 'admin';
   // The linked client themselves — excluding admin. Hard-excludes them from
@@ -67,12 +77,12 @@ export default function RenewalActionPanel({
   // their custom role string happens to contain (same hardening
   // StageAuditActionPanel needed after a live bug — built in from the start
   // here instead).
-  const isClientOnly = !isAdmin && currentUserId === clientUserId;
+  const isClientOnly = !isAdmin && (currentUserId === clientUserId || isEmailMatch);
   const isCRM         = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('crm'));
   const isAuditor     = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('auditor'));
   const isTech        = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('tech'));
   const isCdc         = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('cdc'));
-  const isLinkedClient = isAdmin || currentUserId === clientUserId;
+  const isLinkedClient = isAdmin || currentUserId === clientUserId || isEmailMatch;
 
   const assignedAuditorId      = recordData['auditor_id__a'] || null;
   const assignedTechReviewerId = recordData['tech_reviewer_id__a'] || null;
