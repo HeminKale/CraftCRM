@@ -222,16 +222,26 @@ const RENEWAL_FILE_FIELD_UPLOAD_ROLE: Record<string, FileUploadRule> = {
   surv_withdrawal_letter:         'crm_only',
 };
 
-// Sprint 8 — the four CRM-uploaded fields whose upload triggers an email to
-// the linked client (the two CDC-uploaded decision fields never trigger an
+// Sprint 8 — the CRM-uploaded fields whose upload triggers an email to the
+// linked client (the two CDC-uploaded decision fields never trigger an
 // email, confirmed — only rows with "get email" in the Client column of the
 // rights matrix send mail). Field name → the notifications/send template
 // name (see app/api/notifications/send/route.ts).
+//
+// surveillance_intimation_letter added after the fact (bug found in
+// production use): the letter's email previously only fired from
+// NewRenewalForm.tsx's one-time record-creation flow — if CRM created the
+// record without attaching the letter (it's optional there) and uploaded
+// it later from the record page, no email ever went out, even after an
+// email__a was added to the record. Reuses the same 'surveillance_intimation'
+// template the creation-flow path already uses, so both paths send an
+// identical email.
 const RENEWAL_EMAIL_ON_UPLOAD_FIELDS: Record<string, string> = {
-  surv_suspension_intimation: 'surveillance_suspension_intimation',
-  surv_suspension_letter:     'surveillance_suspension_letter',
-  surv_withdrawal_intimation: 'surveillance_withdrawal_intimation',
-  surv_withdrawal_letter:     'surveillance_withdrawal_letter',
+  surveillance_intimation_letter: 'surveillance_intimation',
+  surv_suspension_intimation:     'surveillance_suspension_intimation',
+  surv_suspension_letter:         'surveillance_suspension_letter',
+  surv_withdrawal_intimation:     'surveillance_withdrawal_intimation',
+  surv_withdrawal_letter:         'surveillance_withdrawal_letter',
 };
 
 // Recertification (recertification_clients__a) — Sprint 5. Server-side twin
@@ -255,6 +265,18 @@ const RECERT_FILE_FIELD_UPLOAD_ROLE: Record<string, FileUploadRule> = {
   recert_tech_findings_file:'tech_only',
   recert_cdc_report:        'cdc_only',
   recert_certificates:      'crm_only',
+};
+
+// Recertification Sprint 9 — mirrors RENEWAL_EMAIL_ON_UPLOAD_FIELDS above,
+// same bug class: previously there was NO map at all for Recertification,
+// so a separately-uploaded recert_intimation_letter (not attached at
+// creation time in NewRecertificationForm.tsx) never sent an email, ever —
+// worse than Surveillance 1's version of this bug, which at least covered
+// the Sprint 8 fields. Reuses the 'recertification_intimation' template
+// NewRecertificationForm.tsx's one-time creation-flow email already uses,
+// so both paths send an identical email.
+const RECERT_EMAIL_ON_UPLOAD_FIELDS: Record<string, string> = {
+  recert_intimation_letter: 'recertification_intimation',
 };
 
 const isFileUploadAllowedForRole = (
@@ -337,7 +359,21 @@ const findFieldValue = (recordData: RecordData, fieldName: string): any => {
   if (normalizedName !== fieldName && recordData[normalizedName] !== undefined) {
     return recordData[normalizedName];
   }
-  
+
+  // Try stripping a trailing __a suffix. get_object_records_with_references
+  // stores a resolved reference field's display value under the BARE field
+  // name (no __a) — fieldMetadata's `name` always has __a appended (see
+  // correctedFieldData in fetchRecordDetail), so without this a reference
+  // field's resolved value fell through to undefined and the raw ID never
+  // got replaced by a label (migration 286 fix for external_client_id
+  // surfaced this — same root cause as getSmartFieldValue below).
+  if (fieldName.endsWith('__a')) {
+    const bareName = fieldName.slice(0, -3);
+    if (recordData[bareName] !== undefined) {
+      return recordData[bareName];
+    }
+  }
+
   return undefined;
 };
 
@@ -377,7 +413,21 @@ const getSmartFieldValue = (recordData: RecordData, fieldName: string): any => {
   if (recordData[snakeCaseWithSingleA] !== undefined) {
     return recordData[snakeCaseWithSingleA];
   }
-  
+
+  // Try stripping a trailing __a suffix. get_object_records_with_references
+  // stores a resolved reference field's display value under the BARE field
+  // name (no __a) — only non-reference columns keep the __a-suffixed key —
+  // but fieldMetadata's `name` always has __a appended (see the
+  // correctedFieldData mapping in fetchRecordDetail), so a reference field's
+  // resolved value was falling through to undefined without this check
+  // (migration 286 fix for external_client_id surfaced this).
+  if (fieldName.endsWith('__a')) {
+    const bareName = fieldName.slice(0, -3);
+    if (recordData[bareName] !== undefined) {
+      return recordData[bareName];
+    }
+  }
+
   // If nothing found, return undefined
   return undefined;
 };
@@ -1154,21 +1204,30 @@ export default function RecordDetailView({
     }
   };
 
-  // Sprint 8 — fires a "get email" notification when one of the four
-  // CRM-uploaded Suspension/Withdrawal fields is uploaded on a renewal
-  // record. Called from every FileUploadField's onUploadComplete on this
-  // page; safe to call for any object/field — it's a no-op unless
-  // isRenewalObject is true AND the field is in RENEWAL_EMAIL_ON_UPLOAD_FIELDS.
-  // Same soft-failure philosophy as every other notification in this epic:
-  // failure is a toast warning only, never blocks the upload that already
-  // succeeded by the time this runs.
+  // Fires a "get email" notification when one of the CRM-uploaded fields in
+  // RENEWAL_EMAIL_ON_UPLOAD_FIELDS (Surveillance 1) or
+  // RECERT_EMAIL_ON_UPLOAD_FIELDS (Recertification) is uploaded on the
+  // matching object. Originally Renewal-only (just the four Sprint 8
+  // Suspension/Withdrawal fields; surveillance_intimation_letter added
+  // later, see that map's own comment) — extended to Recertification in
+  // Sprint 9 once the exact same "letter uploaded separately, no email
+  // ever sent" bug was confirmed there too, with no map at all previously.
+  // Called from every FileUploadField's onUploadComplete on this page; safe
+  // to call for any object/field — it's a no-op unless the object matches
+  // AND the field is in that object's map. Same soft-failure philosophy as
+  // every other notification in this epic: failure is a toast warning
+  // only, never blocks the upload that already succeeded by the time this
+  // runs.
   const maybeSendRenewalUploadEmail = async (info?: UploadedFileInfo) => {
     if (!info) return;
     const isRenewalObject = objectLabel?.toLowerCase().includes('renewal') ?? false;
-    if (!isRenewalObject) return;
+    const isRecertObject  = objectLabel?.toLowerCase().includes('recertification') ?? false;
+    if (!isRenewalObject && !isRecertObject) return;
 
-    const template = RENEWAL_EMAIL_ON_UPLOAD_FIELDS[info.fieldName];
-    if (!template) return; // not one of the four email-triggering fields
+    const template = isRecertObject
+      ? RECERT_EMAIL_ON_UPLOAD_FIELDS[info.fieldName]
+      : RENEWAL_EMAIL_ON_UPLOAD_FIELDS[info.fieldName];
+    if (!template) return; // not one of this object's email-triggering fields
 
     const recipient = recordData?.['email__a'];
     if (!recipient) return; // no email on file for this record — nothing to send to
@@ -1187,7 +1246,12 @@ export default function RecordDetailView({
         body: JSON.stringify({
           to: recipient,
           template,
-          data: { companyName: companyLabel },
+          // hasLetter: true — this path only ever runs after a successful
+          // upload with a real attachmentUrl below, so the file genuinely
+          // is attached. Only the 'surveillance_intimation' template reads
+          // this flag (picks "attached to this email" vs "will follow
+          // shortly" wording); harmless extra key for the other templates.
+          data: { companyName: companyLabel, hasLetter: true },
           attachmentUrl: signedData.signedUrl,
         }),
       });
@@ -1978,6 +2042,7 @@ export default function RecordDetailView({
             currentUserRole={userProfile?.role || 'user'}
             currentCustomRole={customRoleName}
             currentUserId={user?.id || ''}
+            currentUserEmail={user?.email || ''}
             tenantId={tenant?.id}
             onActionComplete={() => setRefreshKey(k => k + 1)}
           />
@@ -2000,6 +2065,7 @@ export default function RecordDetailView({
             currentUserRole={userProfile?.role || 'user'}
             currentCustomRole={customRoleName}
             currentUserId={user?.id || ''}
+            currentUserEmail={user?.email || ''}
             tenantId={tenant?.id}
             onActionComplete={() => setRefreshKey(k => k + 1)}
           />

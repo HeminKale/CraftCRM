@@ -1,32 +1,62 @@
 -- ============================================================
--- Migration 284: Filter list views by certification_body__a
+-- Migration 288: Scope list/detail reads to the caller's own records
+--                 for the External Client role
 --
--- Extends get_object_records_with_references (live body: 129) — the
--- function TabContent.tsx actually calls for every object's list view
--- (NOT tenant.get_object_records from 230, which is a different,
--- older function with its own owner/role_peers sharing filter that
--- this one never picked up — confirmed by reading both bodies before
--- writing this migration, not assumed) — with an additive
--- p_certification_body param.
+-- ── The gap this closes ─────────────────────────────────────────────
+-- get_object_records_with_references (live body: 129, extended by 284
+-- for app-scoping) is the function BOTH TabContent.tsx's list view AND
+-- RecordDetailView.tsx's detail view call to read external_clients__a,
+-- renewal_clients__a, and recertification_clients__a. Its generated SQL
+-- has never had any filter tied to the caller's own identity — only
+-- 284's app-scoping WHERE clause. Every write-side action RPC on these
+-- three objects (accept/reject/upload — 213, 237, 248, 264, 278, etc.)
+-- already gates on "only the linked client may act on their own record",
+-- but nothing gated who could *read* which records. A user with the
+-- External Client custom role could browse every client's record across
+-- the whole tenant, not just their own — confirmed by direct code
+-- inspection this session, not assumed.
 --
--- When passed (and the table has the column — most objects won't),
--- adds `WHERE certification_body__a = <value>` so a list view opened
--- under a given app (Americo/BQSR/AQSR) only shows that app's records.
--- Every other object, and every call site that doesn't pass the new
--- param, is completely unaffected — same additive-only discipline as
--- every prior cross-cutting migration this epic.
+-- ── Identification: two checks, not one, in this priority order ────
+-- 1. PRIMARY — client_user_id__a = auth.uid(). The record's authoritative
+--    UUID link to one specific logged-in user.
+-- 2. FALLBACK — lower(email__a) = lower(caller's system.users.email).
+--    Needed because client_user_id__a is frequently NULL in practice:
+--    it's deliberately excluded from every generic edit form (see
+--    project_certification_body_app_scoping's field-tampering
+--    rationale — same treatment as created_by/updated_by), so there is
+--    currently no UI path for CRM/Admin to set it when they create a
+--    record on a client's behalf. It only auto-populates via the
+--    migration-215 trigger, which only fires if the client self-created
+--    the record. email__a is the email CRM typed onto the record itself
+--    at intake — not looked up live from anywhere else.
 --
--- Reproduces 129's full body verbatim (both the tenant function and its
--- public bridge) plus the one new param and conditional WHERE clause.
+-- This is NOT a new mechanism invented for this migration — it's the
+-- exact dual-check migration 287 already introduced for 3 Surveillance-1
+-- (renewal_clients__a) WRITE RPCs, for the same reason (client_user_id__a
+-- unreliability). 287 explicitly left External Client / Recertification
+-- on the old UUID-only check and explicitly scoped itself to writes only.
+-- This migration is the first to (a) apply the same dual-check to READS,
+-- and (b) extend it to all three client objects for consistency.
+--
+-- A record matches if EITHER check passes. Admin and every other role
+-- (CRM Office, Auditor, Tech Reviewer, CDC) are completely unaffected —
+-- the added WHERE fragment only applies when the caller's own custom
+-- role is External Client. Every other object in the tenant (anything
+-- that isn't one of these 3 client tables) is also completely
+-- unaffected — same additive-only discipline as every prior
+-- cross-cutting migration in this epic (282-287).
+--
+-- Reproduces 284's full body verbatim (both the tenant function and its
+-- public bridge) plus the one new caller-identity WHERE fragment.
 -- ============================================================
 
-DROP FUNCTION IF EXISTS tenant.get_object_records_with_references(UUID, INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS tenant.get_object_records_with_references(UUID, INTEGER, INTEGER, TEXT);
 
 CREATE OR REPLACE FUNCTION tenant.get_object_records_with_references(
     p_object_id UUID,
     p_limit INTEGER DEFAULT 100,
     p_offset INTEGER DEFAULT 0,
-    p_certification_body TEXT DEFAULT NULL   -- NEW: app-scoping filter
+    p_certification_body TEXT DEFAULT NULL   -- app-scoping filter (284)
 )
 RETURNS TABLE(
     record_id uuid,
@@ -49,6 +79,13 @@ DECLARE
     v_join_counter integer := 1;
     v_where_clause text := '';
     v_has_cert_body_col boolean := false;
+    -- NEW (288): caller-identity scoping for the External Client role
+    v_caller_id uuid;
+    v_caller_email text;
+    v_custom_role text;
+    v_is_external_client boolean := false;
+    v_has_client_user_id_col boolean := false;
+    v_has_email_col boolean := false;
 BEGIN
     -- Get table name from tenant.objects
     SELECT o.name INTO v_table_name
@@ -58,6 +95,20 @@ BEGIN
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Object not found';
     END IF;
+
+    -- NEW (288): resolve caller identity + role once, only relevant for
+    -- the 3 client tables this scoping applies to.
+    v_caller_id := auth.uid();
+
+    SELECT su.email INTO v_caller_email
+    FROM system.users su WHERE su.id = v_caller_id;
+
+    SELECT r.name INTO v_custom_role
+    FROM system.users su
+    JOIN tenant.roles r ON r.id = su.custom_role_id
+    WHERE su.id = v_caller_id;
+
+    v_is_external_client := lower(coalesce(v_custom_role, '')) LIKE '%external%client%';
 
     -- First pass: Build basic JSONB fields (non-reference fields)
     FOR v_column_record IN
@@ -84,6 +135,14 @@ BEGIN
 
         IF v_column_record.column_name = 'certification_body__a' THEN
             v_has_cert_body_col := true;
+        END IF;
+
+        -- NEW (288): track whether this table has the two identity columns
+        IF v_column_record.column_name = 'client_user_id__a' THEN
+            v_has_client_user_id_col := true;
+        END IF;
+        IF v_column_record.column_name = 'email__a' THEN
+            v_has_email_col := true;
         END IF;
 
         -- Handle different data types safely for non-reference fields
@@ -157,10 +216,31 @@ BEGIN
         v_join_counter := v_join_counter + 1;
     END LOOP;
 
-    -- App-scoping filter — only when the table has the column AND a value
-    -- was actually passed in. Every other object/call site is untouched.
+    -- App-scoping filter (284) — only when the table has the column AND a
+    -- value was actually passed in.
     IF v_has_cert_body_col AND p_certification_body IS NOT NULL AND trim(p_certification_body) != '' THEN
-        v_where_clause := ' WHERE t.certification_body__a = ' || quote_literal(p_certification_body);
+        v_where_clause := v_where_clause || ' AND t.certification_body__a = ' || quote_literal(p_certification_body);
+    END IF;
+
+    -- NEW (288): caller-identity scoping — only for External_Client__a,
+    -- renewal_clients__a, recertification_clients__a, and only when the
+    -- caller's own custom role is External Client. Admin and every other
+    -- role are untouched. Record matches if EITHER identifier passes —
+    -- see migration header for why two checks instead of one.
+    IF v_is_external_client
+       AND v_table_name IN ('external_clients__a', 'renewal_clients__a', 'recertification_clients__a')
+       AND v_has_client_user_id_col
+    THEN
+        v_where_clause := v_where_clause || ' AND (t.client_user_id__a = ' || quote_literal(coalesce(v_caller_id::text, '')) ||
+            CASE
+                WHEN v_has_email_col AND v_caller_email IS NOT NULL THEN
+                    ' OR lower(t.email__a) = lower(' || quote_literal(v_caller_email) || ')'
+                ELSE ''
+            END || ')';
+    END IF;
+
+    IF v_where_clause != '' THEN
+        v_where_clause := ' WHERE ' || substring(v_where_clause from 6); -- strip leading ' AND '
     END IF;
 
     -- Build the final SQL with reference resolution
@@ -192,16 +272,17 @@ BEGIN
 END;
 $$;
 
--- Update the public bridge function as well
+-- Update the public bridge function as well (unchanged signature — no new
+-- params needed, caller identity is resolved via auth.uid() internally)
 
-DROP FUNCTION IF EXISTS public.get_object_records_with_references(UUID, UUID, INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS public.get_object_records_with_references(UUID, UUID, INTEGER, INTEGER, TEXT);
 
 CREATE OR REPLACE FUNCTION public.get_object_records_with_references(
     p_object_id UUID,
     p_tenant_id UUID,
     p_limit INTEGER DEFAULT 100,
     p_offset INTEGER DEFAULT 0,
-    p_certification_body TEXT DEFAULT NULL   -- NEW: app-scoping filter
+    p_certification_body TEXT DEFAULT NULL
 )
 RETURNS TABLE(
     record_id uuid,

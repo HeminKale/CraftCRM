@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import DataTable from '../DataTable';
 import RecordDetailView from './RecordDetailView';
@@ -151,9 +151,27 @@ export default function TabContent({
  
  
   const { tenant, user } = useSupabase();
-  const supabase = createClientComponentClient();
+  // BUGFIX: createClientComponentClient() returns a NEW object every render.
+  // It sat in fetchObjectRecords' useEffect dependency array below, so that
+  // effect re-fired on every re-render of this component — not just when
+  // objectId/tenant actually changed. Switching tabs cascades several other
+  // effects (page layout, buttons, field prefs, record lists) that each call
+  // setState, each triggering a re-render, each re-firing the records fetch
+  // again. The resulting burst of concurrent identical RPC calls could
+  // resolve out of order, so an in-flight-but-stale response could land
+  // after the correct one and overwrite it with empty/wrong data — matching
+  // the "records vanish until a hard refresh" symptom. Memoizing supabase
+  // gives it a stable reference so the effect only fires when it should.
+  const supabase = useMemo(() => createClientComponentClient(), []);
   const { selectedApp } = useCurrentApp();
   const userMap = useUserMap();
+
+  // BUGFIX (same root cause as above): guards against the remaining race —
+  // even with a stable supabase reference, two fetches can still overlap
+  // (e.g. rapid tab switching). This tracks which objectId is the most
+  // recently *requested* one so a slower, older response can't clobber a
+  // newer one's result.
+  const latestRequestedObjectId = useRef<string | undefined>(undefined);
 
   // Re-resolve created_by / updated_by whenever records or userMap changes.
   // This ensures names appear even if userMap loads after records.
@@ -1042,11 +1060,18 @@ export default function TabContent({
       setLoading(false);
       return;
     }
-    
+
+    // BUGFIX: remember which objectId THIS call is for, so a slower/older
+    // response landing after a newer request has already been fired can't
+    // overwrite the newer one's (correct) result. See the useRef declaration
+    // above for the full explanation.
+    const requestedObjectId = objectId;
+    latestRequestedObjectId.current = requestedObjectId;
+
     try {
       setLoading(true);
       setError(null);
-      
+
       console.log('🔍 Fetching object records for:', objectId);
 
       const { data, error: fetchError } = await supabase
@@ -1058,12 +1083,19 @@ export default function TabContent({
           p_certification_body: selectedApp?.name || null
         });
 
+      // A newer fetch was kicked off while this one was in flight — drop
+      // this (now-stale) response instead of letting it clobber the list.
+      if (latestRequestedObjectId.current !== requestedObjectId) {
+        console.log('🔍 Dropping stale fetchObjectRecords response for', requestedObjectId);
+        return;
+      }
+
       if (fetchError) {
         console.error('Error fetching object records:', fetchError);
         setError(fetchError.message);
         return;
       }
-      
+
       if (data) {
         console.log('�� Raw object records:', data);
       console.log('🔍 Data type:', typeof data);
@@ -1097,10 +1129,13 @@ export default function TabContent({
         console.log('🔍 No data returned from get_object_records');
       }
     } catch (err) {
+      if (latestRequestedObjectId.current !== requestedObjectId) return; // stale — see above
       console.error('Error in fetchObjectRecords:', err);
       setError('Failed to fetch records');
     } finally {
-      setLoading(false);
+      if (latestRequestedObjectId.current === requestedObjectId) {
+        setLoading(false);
+      }
     }
   };
 
