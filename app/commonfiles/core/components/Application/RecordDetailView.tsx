@@ -453,6 +453,17 @@ export default function RecordDetailView({
   const [editingValues, setEditingValues] = useState<RecordData>({});
   const [saving, setSaving] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // The object's real technical name (e.g. 'renewal_clients__a'), fetched in
+  // fetchRecordDetail via get_tenant_objects. NOT the same as the
+  // `objectLabel` prop — that's actually the clicked NAV TAB's display
+  // label (see TabContent.tsx's `objectLabel: tabLabel`), which for
+  // Surveillance 1 is literally "Surveillance 1", not "Renewal Clients" —
+  // every `objectLabel?.toLowerCase().includes('renewal')` check in this
+  // file was silently false for every user, always, meaning
+  // RenewalWorkflowBar/RenewalActionPanel never rendered at all (found live
+  // via Playwright, Surveillance 1 Sprint 9 follow-up). Use this instead
+  // for any "which object is this" check.
+  const [objectTechName, setObjectTechName] = useState<string>('');
   
   // Custom component state for modal display
   const [activeCustomComponent, setActiveCustomComponent] = useState<{
@@ -706,6 +717,22 @@ export default function RecordDetailView({
       try {
         setLoading(true);
         setError(null);
+
+        // 0. Resolve the object's real technical name (e.g.
+        // 'renewal_clients__a') — NOT derivable from the `objectLabel` prop,
+        // which is actually the clicked nav tab's display label (see
+        // objectTechName's own comment at its declaration). Every object-
+        // identity check in this file should use this, not objectLabel.
+        try {
+          const { data: objectsData, error: objectsError } = await supabase
+            .rpc('get_tenant_objects', { p_tenant_id: tenant.id });
+          if (!objectsError) {
+            const thisObject = objectsData?.find((obj: any) => obj.id === objectId);
+            setObjectTechName(thisObject?.name || '');
+          }
+        } catch (objErr) {
+          console.error('⚠️ Error resolving object technical name:', objErr);
+        }
 
         // 1. Fetch layout blocks for the object
         const { data: layoutData, error: layoutError } = await supabase
@@ -1029,7 +1056,7 @@ export default function RecordDetailView({
       }
 
       // ── Date order validation for Renewal Clients workflow ───────
-      if (objectLabel?.toLowerCase().includes('renewal')) {
+      if (objectTechName === 'renewal_clients__a') {
         const merged: Record<string, string> = { ...recordData, ...cleanValues };
         const d = (key: string) => merged[key] ? new Date(merged[key]) : null;
 
@@ -1054,7 +1081,7 @@ export default function RecordDetailView({
       }
 
       // ── Date order validation for External Clients workflow ──────
-      if (objectId === '62803c4d-9430-4d19-a487-4370d52e062a') {
+      if (objectTechName === 'external_clients__a') {
         // Merge saved record dates with the values being saved
         const merged: Record<string, string> = { ...recordData, ...cleanValues };
         const d = (key: string) => merged[key] ? new Date(merged[key]) : null;
@@ -1220,8 +1247,8 @@ export default function RecordDetailView({
   // runs.
   const maybeSendRenewalUploadEmail = async (info?: UploadedFileInfo) => {
     if (!info) return;
-    const isRenewalObject = objectLabel?.toLowerCase().includes('renewal') ?? false;
-    const isRecertObject  = objectLabel?.toLowerCase().includes('recertification') ?? false;
+    const isRenewalObject = objectTechName === 'renewal_clients__a';
+    const isRecertObject  = objectTechName === 'recertification_clients__a';
     if (!isRenewalObject && !isRecertObject) return;
 
     const template = isRecertObject
@@ -1659,8 +1686,8 @@ export default function RecordDetailView({
                                             !can('edit', 'field', field.id) ||
                                             !isFileUploadAllowedForRole(
                                               field.name, recordData, user?.id, userProfile?.role, customRoleName,
-                                              objectLabel?.toLowerCase().includes('renewal') ?? false,
-                                              objectLabel?.toLowerCase().includes('recertification') ?? false,
+                                              objectTechName === 'renewal_clients__a',
+                                              objectTechName === 'recertification_clients__a',
                                             )
                                           }
                                           companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
@@ -1992,7 +2019,7 @@ export default function RecordDetailView({
       </div>
 
       {/* Workflow bar + Review panel — only for External Clients object */}
-      {(objectId === '62803c4d-9430-4d19-a487-4370d52e062a' || objectLabel?.toLowerCase().includes('external client')) && recordData && (
+      {objectTechName === 'external_clients__a' && recordData && (
         <>
           <ClientWorkflowBar
             recordData={recordData}
@@ -2029,7 +2056,7 @@ export default function RecordDetailView({
       )}
 
       {/* Workflow bar + Action panel — only for Renewal Clients object */}
-      {objectLabel?.toLowerCase().includes('renewal') && recordData && (
+      {objectTechName === 'renewal_clients__a' && recordData && (
         <>
           <RenewalWorkflowBar
             status={recordData['status__a'] ?? null}
@@ -2052,7 +2079,7 @@ export default function RecordDetailView({
       {/* Workflow bar + Action panel — only for Recertification Clients
           object. Own conditional block, own components — never merged with
           the Renewal block above even though both follow the same shape. */}
-      {objectLabel?.toLowerCase().includes('recertification') && recordData && (
+      {objectTechName === 'recertification_clients__a' && recordData && (
         <>
           <RecertificationWorkflowBar
             status={recordData['status__a'] ?? null}
