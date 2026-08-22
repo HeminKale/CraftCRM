@@ -29,6 +29,21 @@ function hasFile(v: any): boolean {
   return false;
 }
 
+// File fields come back from get_object_records_with_references as a JSON
+// string ({"id","name","bucket","path",...} — set by finalize_file_upload).
+// Parses it defensively; returns null for anything that isn't a real
+// single-file object (covers the '{}' / '[]' / already-parsed cases too).
+function parseFileInfo(raw: any): { name: string; bucket: string; path: string } | null {
+  if (!hasFile(raw)) return null;
+  try {
+    const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!obj || Array.isArray(obj) || !obj.bucket || !obj.path) return null;
+    return { name: obj.name || 'file', bucket: obj.bucket, path: obj.path };
+  } catch {
+    return null;
+  }
+}
+
 // Full Surveillance 1 checkpoint chain through Certificate Issue (row 15 of
 // the SURV1 rights matrix — Suspension/Withdrawal are out of scope for this
 // plan, see 00_Sprint_Plan.md). Mirrors StageAuditActionPanel.tsx's shape
@@ -93,6 +108,7 @@ export default function RenewalActionPanel({
   const rejectionNotes        = recordData['rejection_notes__a'];          // legacy intimation reject
   const planClientRemarks     = recordData['surv_plan_client_remarks__a'];
   const rcaRejectionNotes     = recordData['surv_rca_rejection_notes__a'];
+  const intimationFile        = parseFileInfo(recordData['surveillance_intimation_letter__a']);
 
   // ── Checkpoint visibility, one per rights-matrix row ─────────────
   const showIntimationPrompt = isCRM && !status && !intimationUploaded;
@@ -233,6 +249,27 @@ export default function RenewalActionPanel({
     }
   };
 
+  // ── View/download an uploaded file inline from a review panel ────
+  // Generic on purpose — used for the intimation letter today, safe to
+  // reuse for plan/report/etc. review panels later without duplicating
+  // this. Signed URL, 5 min expiry — same pattern RecordDetailView.tsx's
+  // maybeSendRenewalUploadEmail already uses for the same bucket.
+  const [viewingFile, setViewingFile] = useState<string | null>(null);
+  const handleViewFile = async (file: { name: string; bucket: string; path: string }) => {
+    setViewingFile(file.path);
+    try {
+      const { data, error } = await supabase.storage
+        .from(file.bucket)
+        .createSignedUrl(file.path, 300);
+      if (error || !data?.signedUrl) { toast.error('Could not open file'); return; }
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    } catch {
+      toast.error('Could not open file');
+    } finally {
+      setViewingFile(null);
+    }
+  };
+
   // ── Tech Reviewer: submit findings ───────────────────────────────
   // Notes optional: blank box = accept without findings, matching the
   // established "empty box = direct accept" trick. Deliberately does NOT
@@ -358,6 +395,15 @@ export default function RenewalActionPanel({
               </svg>
               Reject
             </button>
+            {intimationFile && (
+              <button onClick={() => handleViewFile(intimationFile)} disabled={viewingFile === intimationFile.path}
+                className="px-5 py-2 text-sm font-medium text-purple-700 bg-white border border-purple-300 rounded-md hover:bg-purple-100 disabled:opacity-50 flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {viewingFile === intimationFile.path ? 'Opening…' : 'View Letter'}
+              </button>
+            )}
           </div>
         </div>
       )}
