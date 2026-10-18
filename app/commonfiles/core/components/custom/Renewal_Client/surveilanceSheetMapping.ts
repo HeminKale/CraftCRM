@@ -167,9 +167,31 @@ export function parseFlexibleDate(raw: any): string | null {
   }
   const s = String(raw ?? '').trim();
   if (!s || s.startsWith('#')) return null; // blank, or an Excel error value (#REF!, #N/A, #VALUE!, ...)
+  const parts = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  const dayFirst = /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/.exec(s);
+  if (parts || dayFirst) {
+    const [y, m, d] = parts ? [+parts[1], +parts[2], +parts[3]] : [+dayFirst![3], +dayFirst![2], +dayFirst![1]];
+    const checked = new Date(y, m - 1, d);
+    return checked.getFullYear() === y && checked.getMonth() === m - 1 && checked.getDate() === d
+      ? toIsoDateString(y, m, d) : null;
+  }
   const d = new Date(s);
   if (isNaN(d.getTime())) return null;
   return toIsoDateString(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
+// Preview only; the import RPC re-checks the locked record before writing.
+export function getSurveillanceImportStatus(rows: ParsedRow[], currentStatus: string | null): string | null {
+  const legacyRanks: Record<string, number> = { Audit_Plan_Sent: 3, Audit_Plan_Accepted: 4, Renewal_Complete: 12 };
+  let current = currentStatus ? SURV_STAGE_PROGRESSION.findIndex(s => s.status === currentStatus) : -1;
+  if (currentStatus && current === -1) {
+    if (!(currentStatus in legacyRanks)) return null; // includes suspension/withdrawal and future statuses
+    current = legacyRanks[currentStatus];
+  }
+  const columns = new Set(rows.filter(r => r.value && r.mapping.kind === 'date').map(r => r.mapping.extColumn));
+  let implied = -1;
+  SURV_STAGE_PROGRESSION.forEach((stage, i) => { if (columns.has(stage.column)) implied = i; });
+  return implied > current ? SURV_STAGE_PROGRESSION[implied].status : null;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -203,12 +225,12 @@ export function parseSummaryWorkbookRows(sheetRows: any[][]): ParsedRow[] {
   // Wide-table pass: row 0 as headers, row 1 as the single data row
   const headerRow = sheetRows[0] || [];
   const dataRow = sheetRows[1] || [];
-  let wideTableDetected = false;
+  // A vertical "Company Name | Acme" row is not a wide-table header.
+  const wideTableDetected = headerRow.filter(cell => WIDE_TABLE_MAPPINGS_SURV[normalizeLabel(cell)]).length >= 2;
 
-  headerRow.forEach((cell, colIdx) => {
+  if (wideTableDetected) headerRow.forEach((cell, colIdx) => {
     const label = normalizeLabel(cell);
     if (label && WIDE_TABLE_MAPPINGS_SURV[label]) {
-      wideTableDetected = true;
       const mapping = WIDE_TABLE_MAPPINGS_SURV[label];
       const rawValue = String(dataRow[colIdx] ?? '').trim();
 
@@ -268,7 +290,7 @@ export function parseSummaryWorkbookRows(sheetRows: any[][]): ParsedRow[] {
       value = null;
     }
 
-    if (value !== null || rawValue === '') {
+    if (mapping.kind !== 'file') {
       parsed.push({
         label: labelRaw.charAt(0).toUpperCase() + labelRaw.slice(1),
         mapping,

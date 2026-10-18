@@ -5,6 +5,8 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useSupabase } from '../../../providers/SupabaseProvider';
 import { useCurrentApp } from '../../../hooks/useCurrentApp';
 import toast from 'react-hot-toast';
+import NewClientForm from '../External_Client/NewClientForm';
+import ClientPicker from './ClientPicker';
 
 interface Props {
   tabId: string;
@@ -31,10 +33,12 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
 
   const [date] = useState(() => new Date().toISOString().split('T')[0]);
 
-  // Client picker — optional
+  // Keep this form's state while the existing New Client flow is open.
   const [clients, setClients]             = useState<ExternalClient[]>([]);
   const [clientId, setClientId]           = useState('');
   const [loadingClients, setLoadingClients] = useState(true);
+  const [externalObjectId, setExternalObjectId] = useState<string | null>(null);
+  const [creatingClient, setCreatingClient] = useState(false);
 
   // Email — pre-filled from the linked client when picked, always editable
   const [email, setEmail] = useState('');
@@ -55,13 +59,21 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
   const loadClients = async () => {
     setLoadingClients(true);
     try {
-      const { data: objects } = await supabase.rpc('get_tenant_objects', { p_tenant_id: tid });
+      const { data: objects, error: objectError } = await supabase.rpc('get_tenant_objects', { p_tenant_id: tid });
+      if (objectError) throw objectError;
       const extObj = objects?.find((o: any) => o.name === 'external_clients__a');
-      if (!extObj) return;
-      const { data: records } = await supabase.rpc('get_object_records', {
-        p_object_id: extObj.id,
-        p_tenant_id: tid,
-      });
+      if (!extObj) throw new Error('External Client object is not configured.');
+      setExternalObjectId(extObj.id);
+      const records: any[] = [];
+      // Search includes clients beyond the first default page.
+      for (let offset = 0; ; offset += 100) {
+        const { data: page, error } = await supabase.rpc('get_object_records', {
+          p_object_id: extObj.id, p_tenant_id: tid, p_limit: 100, p_offset: offset,
+        });
+        if (error) throw error;
+        records.push(...(page || []));
+        if (!page || page.length < 100) break;
+      }
       setClients(
         (records || []).map((r: any) => {
           const d = r.record_data ?? r;
@@ -70,8 +82,8 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
           return { id: r.record_id ?? r.id, label: `${company}${contact}`, email: d.email__a || '' };
         })
       );
-    } catch {
-      // silently fail — picker is optional anyway
+    } catch (err: any) {
+      toast.error(err.message || 'Could not load clients');
     } finally {
       setLoadingClients(false);
     }
@@ -93,11 +105,12 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!clientId) { toast.error('Select a client or create a new client first.'); return; }
     setSubmitting(true);
     try {
-      // Create the renewal record (client link optional)
+      // Every new surveillance record is linked to the chosen client.
       const { data, error } = await supabase.rpc('create_renewal_client', {
-        p_external_client_id: clientId || null,
+        p_external_client_id: clientId,
         p_email: email.trim() || null,
         p_certification_body: selectedApp?.name || null,
       });
@@ -106,14 +119,6 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
       if (!result?.success) throw new Error(result?.message || 'Failed to create renewal');
 
       const newRecordId: string = result.record_id;
-      let letterUploaded = false;
-      // Captured directly from the upload step below — avoids a second
-      // round-trip to re-fetch the record just to read back what we already
-      // know. Storage location, not a stored URL: every download in this app
-      // goes through a freshly-signed URL (see FileUploadField.tsx's download
-      // handler), never a persisted public link.
-      let letterBucket: string | null = null;
-      let letterPath: string | null = null;
 
       // Upload surveillance letter if provided
       if (file && objectId) {
@@ -145,14 +150,15 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
                 .upload(storage_path, file, { upsert: true });
 
               if (!storageErr) {
-                await supabase.rpc('finalize_file_upload', {
+                const { data: finalData, error: finalError } = await supabase.rpc('finalize_file_upload', {
                   p_attachment_id:   attachment_id,
                   p_final_byte_size: file.size,
                   p_final_mime_type: file.type || null,
                 });
-                letterUploaded = true;
-                letterBucket = bucket || BUCKET;
-                letterPath = storage_path;
+                if (finalError || !finalData?.[0]?.success) {
+                  throw new Error(finalError?.message || finalData?.[0]?.message || 'Letter upload could not be finalized');
+                }
+
               }
             } else {
               toast('Letter upload failed — you can upload from the record.', { icon: '⚠️' });
@@ -167,49 +173,9 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
 
       toast.success('Surveillance 1 record created');
 
-      // Notify the client by email — best-effort, never blocks record
-      // creation (same soft-failure philosophy as the letter upload above).
-      if (email.trim()) {
-        try {
-          const selectedClient = clients.find(c => c.id === clientId);
-          const companyLabel = selectedClient?.label || undefined;
-
-          // Generate a real signed URL from the bucket/path captured during
-          // upload above — Resend's server needs a fetchable URL, and a
-          // signed URL is the only kind this app's storage ever hands out.
-          let attachmentUrl: string | undefined;
-          if (letterUploaded && letterBucket && letterPath) {
-            const { data: signedData, error: signErr } = await supabase.storage
-              .from(letterBucket)
-              .createSignedUrl(letterPath, 300); // 5 min — just enough for the API route to fetch it
-            if (!signErr && signedData?.signedUrl) {
-              attachmentUrl = signedData.signedUrl;
-            }
-          }
-
-          const emailPayload: any = {
-            to: email.trim(),
-            template: 'surveillance_intimation',
-            data: { companyName: companyLabel, hasLetter: letterUploaded },
-          };
-          if (attachmentUrl) {
-            emailPayload.attachmentUrl = attachmentUrl;
-          }
-
-          const res = await fetch('/api/notifications/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(emailPayload),
-          });
-          const notifyResult = await res.json().catch(() => null);
-          if (!notifyResult?.success) {
-            toast('Record created, but the notification email was not sent.', { icon: '⚠️' });
-          }
-        } catch (err) {
-          console.error('Email notification error:', err);
-          toast('Record created, but the notification email was not sent.', { icon: '⚠️' });
-        }
-      }
+      // Sprint 12: record creation and finalised intimation uploads queue mail
+      // transactionally. No browser fetch or signed URL is required.
+      toast('Email delivery is tracked separately on the record.');
 
       onSuccess?.();
     } catch (err: any) {
@@ -219,13 +185,30 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
     }
   };
 
+  if (creatingClient && externalObjectId && tid) {
+    return <NewClientForm objectId={externalObjectId} tenantId={tid} singleRecord
+      onCancel={() => setCreatingClient(false)}
+      onCreated={created => {
+        const option = {
+          id: created.id,
+          label: `${created.company}${created.contact ? ` (${created.contact})` : ''}`,
+          email: created.email,
+        };
+        setClients(previous => [option, ...previous.filter(c => c.id !== option.id)]);
+        setClientId(created.id);
+        setEmailTouched(false);
+        setEmail(created.email);
+        setCreatingClient(false);
+      }} />;
+  }
+
   return (
     <div className="bg-white p-2">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">New Surveillance 1</h2>
           <p className="text-sm text-gray-500 mt-1">
-            Optionally link to an existing client and upload the surveillance intimation letter.
+            Select or create a client, then upload the surveillance intimation letter.
           </p>
         </div>
         {onCancel && (
@@ -239,32 +222,14 @@ export default function NewRenewalForm({ objectId, tenantId, onSuccess, onCancel
 
       <form onSubmit={handleSubmit} className="space-y-5">
 
-        {/* Row 1: Client picker (optional) + Date */}
+        {/* Row 1: Search/create client + Date */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Client <span className="text-gray-400 font-normal">(optional)</span>
+              Client <span className="text-red-500">*</span>
             </label>
-            {loadingClients ? (
-              <div className="flex items-center gap-2 text-sm text-gray-500 py-2">
-                <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Loading clients...
-              </div>
-            ) : (
-              <select
-                value={clientId}
-                onChange={e => setClientId(e.target.value)}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">— none —</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.label}</option>
-                ))}
-              </select>
-            )}
+            <ClientPicker options={clients} value={clientId} loading={loadingClients} disabled={submitting}
+              canCreate={!!externalObjectId} onChange={setClientId} onCreate={() => setCreatingClient(true)} />
           </div>
 
           <div>

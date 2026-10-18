@@ -169,11 +169,14 @@ function StageTrack({ stages, offset, currentIdx, total, recordData }: {
 interface Props {
   status?: string | null;
   recordData: Record<string, any>;
+  hideTeamDetails?: boolean;
 }
 
-export default function RecertificationWorkflowBar({ recordData }: Props) {
-  const currentIdx = resolveCurrentStageIndex(recordData);
-  const total = STAGES.length;
+export default function RecertificationWorkflowBar({ recordData, hideTeamDetails = false }: Props) {
+  const sourceIndex = resolveCurrentStageIndex(recordData);
+  const stages = hideTeamDetails ? STAGES.filter(stage => stage.statusValue !== 'Recert_Team_Assigned') : STAGES;
+  const currentIdx = stages.filter(stage => STAGES.indexOf(stage) <= sourceIndex).length - 1;
+  const total = stages.length;
 
   const [windowStart, setWindowStart] = useState(() => resolveWindow(currentIdx, total).start);
 
@@ -183,7 +186,7 @@ export default function RecertificationWorkflowBar({ recordData }: Props) {
   useEffect(() => {
     setWindowStart(resolveWindow(currentIdx, total).start);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIdx]);
+  }, [currentIdx, total]);
 
   const isWindowed = total > WINDOW_SIZE;
   const windowEnd = Math.min(windowStart + WINDOW_SIZE, total);
@@ -220,7 +223,7 @@ export default function RecertificationWorkflowBar({ recordData }: Props) {
 
         <div className="flex-1 min-w-0">
           <StageTrack
-            stages={STAGES.slice(windowStart, windowEnd)}
+            stages={stages.slice(windowStart, windowEnd)}
             offset={windowStart}
             currentIdx={currentIdx}
             total={total}

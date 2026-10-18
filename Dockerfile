@@ -23,6 +23,9 @@ RUN npm run build
 FROM base AS runner
 WORKDIR /app
 
+# Local DOCX-to-PDF rendering for suspension mail; no external conversion API.
+RUN apk add --no-cache libreoffice-writer font-dejavu font-liberation
+
 ENV NODE_ENV production
 
 RUN addgroup --system --gid 1001 nodejs

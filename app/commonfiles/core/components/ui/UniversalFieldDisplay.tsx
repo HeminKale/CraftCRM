@@ -59,6 +59,10 @@ export const UniversalFieldDisplay: React.FC<UniversalFieldDisplayProps> = ({
   const smartValue = getSmartFieldValue(record, fieldName);
   const displayValue = smartValue || fieldValue || '-';
 
+  if (fieldName.replace(/__a$/, '').toLowerCase() === 'status' && displayValue === 'Suspended') {
+    return <span className={`inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800 ${className}`} onClick={onClick}>Suspended</span>;
+  }
+
   // Base classes for all field displays
   const baseClasses = 'text-sm text-gray-900';
   

@@ -1,3 +1,10 @@
+> Historical matrix audit. The original ?verified? conclusions below were
+> superseded by the [SummaryUpload QA review](../Renewal/Sprints/Sprint_10_QA_SummaryUpload.md). Current prepared
+> fixes require migrations 291?296; their production application has not been
+> verified. Blank cells mean no view/edit/upload/accept, and Auditor/Tech Reviewer
+> access is limited to their assigned records. Rejection and the independent
+> suspension decision remain outside the current change.
+
 # Recertification — Rights Matrix Verification
 
 Row-by-row audit of the RECERT rights matrix against the actual live code —

@@ -1,5 +1,12 @@
 # Surveillance 1 (Renewal) — Sprint Plan
 
+Latest follow-up work, 18 October 2026:
+
+- [Sprint 11: admin bulk Summary upload](Sprint_11_Bulk_Summary_Upload.md) — implemented and verified locally.
+- [Sprint 12: email review and Resend readiness](Sprint_12_Email_Review_Resend.md) — implemented and verified locally; manual migration/configuration/live QA remain.
+- [Sprint 13: non-response suspension, 30 days plus 10](Sprint_13_Nonresponse_Suspension.md) — upload-based deadlines/reminder/External Client suspension in 301, shared DOCX support in 302 and outgoing PDF support in 303 implemented locally. Live scheduling is disabled; actual template content/conversion/layout/activation and BA's Reject path remain pending. No later sprint is authorised.
+- Finish and document one sprint before starting the next. Earlier scope statements below describe the original audit-flow build. The new non-response rule does not reactivate the old compulsory post-certificate chain.
+
 This document breaks the Surveillance 1 build into sprints. "Surveillance 1" is a UI
 relabel of the existing `tenant.renewal_clients__a` object/table — not a new object.
 The stakeholder renames "New Renewal" → "New Surveillance 1" manually in the UI; this

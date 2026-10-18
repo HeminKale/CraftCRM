@@ -35,8 +35,8 @@ apply order.
 
 | Layer | What it controls | Where it lives | Aware of custom role names? | Aware of Permission Sets? |
 |---|---|---|---|---|
-| **Permission Sets** | Whether the upload/edit UI even renders for this user, on this field | `can('edit', 'field', field.id)` in [`RecordDetailView.tsx:1343`](../../app/commonfiles/core/components/Application/RecordDetailView.tsx#L1343); server-side `can_read` filtering in `get_tenant_fields` (migration 209) — **but only for columns that have a `tenant.fields` row at all, see "Date and notes fields" below** | No | — |
-| **Role-name gating** | Whether an upload that *does* happen advances `status__a`, and (for `quotation`, and `clientAgreement__c` once 239 is applied) whether the upload is allowed to happen at all | `start_file_upload` (hard blocks) and `finalize_file_upload` (soft gate, everything else) — currently defined in [`238_stage2_workflow_and_stage1_followup.sql`](../../supabase/migrations/238_stage2_workflow_and_stage1_followup.sql); `clientAgreement__c`'s hard block is in [`239_restrict_client_agreement_upload.sql`](../../supabase/migrations/239_restrict_client_agreement_upload.sql), not yet applied | Yes — `lower(custom_role_name) LIKE '%crm%'` etc. | No |
+| **Permission Sets** | Whether the upload/edit UI even renders for this user, on this field | `can('edit', 'field', field.id)` in [`RecordDetailView.tsx:1343`](../../../app/commonfiles/core/components/Application/RecordDetailView.tsx#L1343); server-side `can_read` filtering in `get_tenant_fields` (migration 209) — **but only for columns that have a `tenant.fields` row at all, see "Date and notes fields" below** | No | — |
+| **Role-name gating** | Whether an upload that *does* happen advances `status__a`, and (for `quotation`, and `clientAgreement__c` once 239 is applied) whether the upload is allowed to happen at all | `start_file_upload` (hard blocks) and `finalize_file_upload` (soft gate, everything else) — currently defined in [`238_stage2_workflow_and_stage1_followup.sql`](../../../supabase/migrations/238_stage2_workflow_and_stage1_followup.sql); `clientAgreement__c`'s hard block is in [`239_restrict_client_agreement_upload.sql`](../../../supabase/migrations/239_restrict_client_agreement_upload.sql), not yet applied | Yes — `lower(custom_role_name) LIKE '%crm%'` etc. | No |
 
 They are **completely independent** and never check each other. A user can:
 - Have Permission Set access to upload a field but the wrong custom role → file attaches, status never advances (silent no-op, by design — see S0_S1_S2.md's "no file-existence precondition" note, same philosophy).
@@ -150,7 +150,7 @@ two fields' hard blocks are at the RPC layer, not the Permission Set layer).
 
 **To add a hard block to a new field** (like `quotation`'s): add an `IF` block inside
 `start_file_upload` following the exact pattern at the top of
-[`232_restrict_quotation_upload.sql`](../../supabase/migrations/232_restrict_quotation_upload.sql) —
+[`232_restrict_quotation_upload.sql`](../../../supabase/migrations/232_restrict_quotation_upload.sql) —
 resolve `_caller_role`/`_custom_role`, check before issuing the storage path, return
 `success = false` with a message if it fails. Needs a new migration; `start_file_upload`
 is defined once and redefined only for this purpose so far.

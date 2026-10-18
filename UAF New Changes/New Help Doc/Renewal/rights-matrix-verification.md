@@ -1,3 +1,10 @@
+> Historical matrix audit. The original ?verified? conclusions below were
+> superseded by the [SummaryUpload QA review](Sprints/Sprint_10_QA_SummaryUpload.md). Current prepared
+> fixes require migrations 291?296; their production application has not been
+> verified. Blank cells mean no view/edit/upload/accept, and Auditor/Tech Reviewer
+> access is limited to their assigned records. Rejection and the independent
+> suspension decision remain outside the current change.
+
 # Surveillance 1 (Renewal) — Rights Matrix Verification
 
 Row-by-row audit of the SURV 1 rights matrix against the actual live code —

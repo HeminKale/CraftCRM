@@ -43,6 +43,8 @@ interface Props {
   tabLabel?: string;
   onSuccess?: () => void;
   onCancel?: () => void;
+  singleRecord?: boolean;
+  onCreated?: (client: { id: string; company: string; contact: string; email: string }) => void;
   [key: string]: any;
 }
 
@@ -135,7 +137,7 @@ async function parsePdf(f: File): Promise<Record<string, string>> {
   return fields;
 }
 
-export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel }: Props) {
+export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel, singleRecord = false, onCreated }: Props) {
   const supabase = createClientComponentClient();
   const { user } = useSupabase();
   const { selectedApp } = useCurrentApp();
@@ -155,6 +157,10 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
     setEntries([]);
     setFileError(null);
     if (!selected) return;
+    if (singleRecord && /\.zip$/i.test(selected.name)) {
+      setFileError('Choose one Excel or PDF application form to create the client for this surveillance record.');
+      return;
+    }
 
     setExtracting(true);
     try {
@@ -287,8 +293,14 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
 
       if (entries.length === 1) {
         // Single record
-        await createRecord(entries[0], appFormFieldId);
+        const id = await createRecord(entries[0], appFormFieldId);
         toast.success('Client created successfully');
+        onCreated?.({
+          id,
+          company: entries[0].fields.Company_name__a || entries[0].fields.name || 'New Client',
+          contact: entries[0].fields.contactPerson__a || '',
+          email: entries[0].fields.email__a || '',
+        });
       } else {
         // Bulk — create all, report results
         let success = 0;
@@ -327,7 +339,7 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
         <div>
           <h2 className="text-xl font-semibold text-gray-900">New Client</h2>
           <p className="text-sm text-gray-500 mt-1">
-            Upload an Excel or PDF application form, or a ZIP containing multiple Excel/PDF files to create clients in bulk.
+            {singleRecord ? 'Upload an Excel or PDF application form to create and select this client for surveillance.' : 'Upload an Excel or PDF application form, or a ZIP containing multiple Excel/PDF files to create clients in bulk.'}
           </p>
         </div>
         {onCancel && (
@@ -346,7 +358,7 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Application Form <span className="text-red-500">*</span>
-              <span className="text-gray-400 font-normal ml-1">(.xlsx, .xls, .pdf, or .zip)</span>
+              <span className="text-gray-400 font-normal ml-1">{singleRecord ? '(.xlsx, .xls, .pdf)' : '(.xlsx, .xls, .pdf, or .zip)'}</span>
             </label>
             <div
               onClick={() => !hasFile && fileInputRef.current?.click()}
@@ -361,7 +373,7 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.xls,.pdf,.zip"
+                accept={singleRecord ? '.xlsx,.xls,.pdf' : '.xlsx,.xls,.pdf,.zip'}
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -408,7 +420,7 @@ export default function NewClientForm({ objectId, tenantId, onSuccess, onCancel 
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                   <p className="text-sm text-gray-500">Click to upload</p>
-                  <p className="text-xs text-gray-400 mt-1">Single Excel/PDF or ZIP of multiple Excel/PDF files</p>
+                  <p className="text-xs text-gray-400 mt-1">{singleRecord ? 'Single Excel or PDF application form' : 'Single Excel/PDF or ZIP of multiple Excel/PDF files'}</p>
                 </div>
               )}
             </div>

@@ -280,7 +280,7 @@ export default function UserManagement({ tenant }: HomeTabProps) {
 
         setInviteEmailSent(emailSent);
         toast[emailSent ? 'success' : 'error'](
-          emailSent ? 'Invitation email sent' : 'Invitation created, but the email could not be sent — share the link below instead'
+          emailSent ? 'Invitation email queued; delivery pending' : 'Invitation created; email queue could not be confirmed — share the link below instead'
         );
 
         loadInvitations();
@@ -400,13 +400,13 @@ export default function UserManagement({ tenant }: HomeTabProps) {
             });
             const sendResult = await res.json();
             toast[sendResult.success ? 'success' : 'error'](
-              sendResult.success ? 'Invitation resent successfully' : 'Invitation renewed, but the email could not be sent'
+              sendResult.success ? 'Invitation email queued; delivery pending' : 'Invitation renewed; email queue could not be confirmed'
             );
           } catch {
-            toast.error('Invitation renewed, but the email could not be sent');
+            toast.error('Invitation renewed; email queue could not be confirmed');
           }
         } else {
-          toast.success('Invitation resent successfully');
+          toast.success('Invitation email queued; delivery pending');
         }
 
         loadInvitations();
@@ -823,12 +823,12 @@ export default function UserManagement({ tenant }: HomeTabProps) {
                     </svg>
                     <div>
                       <p className="text-sm font-medium text-green-800">
-                        {inviteEmailSent ? 'Invitation email sent!' : 'Invitation created successfully!'}
+                        {inviteEmailSent ? 'Invitation email queued; delivery pending!' : 'Invitation created successfully!'}
                       </p>
                       <p className="text-xs text-green-600 mt-0.5">
                         {inviteEmailSent
-                          ? <>An email was sent to <strong>{inviteForm.email}</strong>. You can also share the link below.</>
-                          : <>We couldn't send an email — share this link with <strong>{inviteForm.email}</strong> directly.</>}
+                          ? <>An email is queued for <strong>{inviteForm.email}</strong>. Delivery is pending. You can also share the link below.</>
+                          : <>Email queue could not be confirmed; share this link with <strong>{inviteForm.email}</strong> directly.</>}
                       </p>
                     </div>
                   </div>

@@ -1,5 +1,11 @@
 # Surveillance 1 (Renewal) — Sprint 8: Suspension & Withdrawal Chain
 
+> Superseded on 18 October 2026: the stakeholder requires Surveillance to end at
+> certificate issue. Local migration 297 and the matching UI pause this chain,
+> preserve its historical records, and await the business analyst's independent-flow
+> specification. See [the question register](../../General/Business_Analyst_Questions.md).
+> The original implementation below is retained as historical documentation.
+
 **Status:** Built. `npx tsc --noEmit` clean. Migrations written, **not yet applied**.
 
 Un-defers the six rights-matrix rows after Certificate Issue — suspension

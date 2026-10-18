@@ -608,7 +608,7 @@ Page Layout placement is a live-UI action. All three steps are needed before
 ### Step 1 — Apply the migration
 
 Run the full contents of
-[`supabase/migrations/241_summary_excel_import_fields.sql`](../../supabase/migrations/241_summary_excel_import_fields.sql)
+[`supabase/migrations/241_summary_excel_import_fields.sql`](../../../supabase/migrations/241_summary_excel_import_fields.sql)
 through your normal Supabase deploy path (SQL editor, CLI, whichever you used
 for 237–240). It's one file — the `DO` block, the trigger, and the three
 redefined RPCs all need to run together, in the order they appear in the

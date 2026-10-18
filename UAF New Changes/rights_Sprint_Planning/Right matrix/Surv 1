@@ -1,0 +1,23 @@
+SURV 1 	Client	CRM	auditor	tech reviewr	cdc	admin 
+						
+surveillance intimation letter	view/ get email	upload				
+acceptance by client	accept					
+assign team 		upload	view	view	view	view/upload/accept
+surv audit plan 	view	upload	upload	view	view	view/upload/accept
+surv plan accept	accept	view	view		view	view/upload/accept
+surv ncr	view	upload	upload		view	view/upload/accept
+surv ncr RCA	upload	view	view	view	view	view/upload/accept
+surv  ncr RCA acceptance	view	view	accept	view	view	view/upload/accept
+surv audit report 	view only after tech review acceptance	upload	upload	accept/ findings	view	view/upload/accept
+surv tech review findings		view	view/ close	write	view	view/upload/accept
+surv tech review checklist		view	view	upload	view	view/upload/accept
+CDC		view			upload	view/upload/accept
+certificate issue	view	upload			view	view/upload/accept
+suspension intimation	view/ get email	upload				view/upload/accept
+suspension decision		view			upload	view/upload/accept
+suspension letter	view/ get email	upload				view/upload/accept
+withdrawal intimation	view/ get email	upload				view/upload/accept
+withdrawal decision		view			upload	view/upload/accept
+withdrawal letter	view/ get email	upload				view/upload/accept
+
+

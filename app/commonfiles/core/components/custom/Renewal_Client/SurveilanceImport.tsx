@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useSupabase } from '../../../providers/SupabaseProvider';
 import toast from 'react-hot-toast';
 import {
-  SURV_STAGE_PROGRESSION,
+  getSurveillanceImportStatus,
   formatIso,
   parseSummaryWorkbookRows,
   type ParsedRow,
@@ -24,20 +24,6 @@ export default function SurveilanceImport({ renewalId, isCrmOrAdmin, onImported 
   const supabase = createClientComponentClient();
   const { tenant } = useSupabase();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // get_object_records_with_references needs the real object UUID, not the
-  // object's name — resolved once via get_tenant_objects, same pattern
-  // NewRenewalForm.tsx already uses. Passing the literal string
-  // 'renewal_clients__a' here would fail the RPC's UUID cast (a bug fixed
-  // before this ever shipped).
-  const [renewalObjectId, setRenewalObjectId] = useState<string | null>(null);
-  useEffect(() => {
-    if (!tenant?.id) return;
-    supabase.rpc('get_tenant_objects', { p_tenant_id: tenant.id }).then(({ data }) => {
-      const obj = data?.find((o: any) => o.name === 'renewal_clients__a');
-      if (obj) setRenewalObjectId(obj.id);
-    });
-  }, [tenant?.id]);
 
   const [rows, setRows]               = useState<ParsedRow[] | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -59,10 +45,7 @@ export default function SurveilanceImport({ renewalId, isCrmOrAdmin, onImported 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !tenant?.id) return;
-    if (!renewalObjectId) {
-      toast.error('Still resolving the Renewal Clients object — try again in a moment.');
-      return;
-    }
+    reset();
     setParsing(true);
     try {
       const buffer = await file.arrayBuffer();
@@ -79,35 +62,14 @@ export default function SurveilanceImport({ renewalId, isCrmOrAdmin, onImported 
       }
 
       // Fetch current status__a so the preview can show whether/how status would advance
-      const { data: recordData, error: fetchErr } = await supabase.rpc(
-        'get_object_records_with_references',
-        {
-          p_object_id: renewalObjectId,
-          p_tenant_id: tenant.id,
-          p_limit: 1,
-          p_offset: 0,
-        }
-      );
-      if (fetchErr) throw fetchErr;
-
-      const current = recordData?.find((r: any) => r.record_id === renewalId)?.record_data;
-      const status = current?.status__a ?? null;
-      setCurrentStatus(status);
-
-      // Compute which status this sheet would advance to
-      const presentColumns = new Set(
-        parsed
-          .filter(r => r.value && r.mapping.kind === 'date' && r.mapping.extColumn)
-          .map(r => r.mapping.extColumn)
-      );
-
-      const currentIdx = SURV_STAGE_PROGRESSION.findIndex(s => s.status === status);
-      let impliedIdx = -1;
-      SURV_STAGE_PROGRESSION.forEach((s, i) => {
-        if (presentColumns.has(s.column)) impliedIdx = i;
+      const { data: recordData, error: fetchErr } = await supabase.rpc('get_renewal_summary_import_state', {
+        p_record_id: renewalId,
       });
-
-      setImpliedStatus(impliedIdx > currentIdx ? SURV_STAGE_PROGRESSION[impliedIdx].status : null);
+      if (fetchErr) throw fetchErr;
+      if (!recordData?.[0]) throw new Error('Surveillance record not found');
+      const status = recordData[0].current_status ?? null;
+      setCurrentStatus(status);
+      setImpliedStatus(getSurveillanceImportStatus(parsed, status));
 
       setRows(parsed);
       setPendingFile(file);
@@ -123,88 +85,42 @@ export default function SurveilanceImport({ renewalId, isCrmOrAdmin, onImported 
     if (!rows || !tenant?.id) return;
     setApplying(true);
     try {
-      // Separate date fields from text fields
-      const textFields: Record<string, string> = {};
-      const dateFields: Record<string, string> = {};
-
+      const fields: Record<string, string> = {};
       rows.forEach(row => {
-        if (row.value === null) return; // Skip blanks
-        if (!row.mapping.extColumn) return; // Skip unmapped
-
-        if (row.mapping.kind === 'date') {
-          dateFields[row.mapping.extColumn] = row.value;
-        } else {
-          textFields[row.mapping.extColumn] = row.value;
+        if (row.value !== null && row.mapping.extColumn && row.mapping.kind !== 'file') {
+          fields[row.mapping.extColumn] = row.value;
         }
       });
 
-      // 1. Update text fields via upsert_renewal_from_summary
-      if (Object.keys(textFields).length > 0) {
-        const { error: updateErr } = await supabase.rpc('upsert_renewal_from_summary', {
-          p_record_id: renewalId,
-          p_data: textFields,
-        });
-        if (updateErr) throw updateErr;
-      }
-
-      // 2. Update date fields via update_tenant_record. Real signature is
-      // (p_table_name, p_record_id, p_tenant_id, p_update_data) — plain
-      // table name, no schema prefix, and p_tenant_id is required (migration
-      // 231, the latest of its three redefinitions).
-      if (Object.keys(dateFields).length > 0) {
-        const { error: dateErr } = await supabase.rpc('update_tenant_record', {
-          p_table_name: 'renewal_clients__a',
-          p_record_id: renewalId,
-          p_tenant_id: tenant.id,
-          p_update_data: dateFields,
-        });
-        if (dateErr) throw dateErr;
-      }
-
-      // 3. Compute and advance status (if needed)
-      const presentColumns = new Set(Object.keys(dateFields));
-      const currentIdx = SURV_STAGE_PROGRESSION.findIndex(s => s.status === currentStatus);
-      let newStatusIdx = -1;
-      SURV_STAGE_PROGRESSION.forEach((s, i) => {
-        if (presentColumns.has(s.column)) newStatusIdx = i;
-      });
-
-      const newStatus = newStatusIdx > currentIdx ? SURV_STAGE_PROGRESSION[newStatusIdx].status : null;
-
-      if (newStatus && newStatus !== currentStatus) {
-        const { error: statusErr } = await supabase.rpc('update_tenant_record', {
-          p_table_name: 'renewal_clients__a',
-          p_record_id: renewalId,
-          p_tenant_id: tenant.id,
-          p_update_data: { status__a: newStatus },
-        });
-        if (statusErr) throw statusErr;
-      }
-
-      // 4. Upload the summary sheet and attach it
+      // Storage bytes are uploaded first. All record changes and the pack
+      // entry are then committed together by one authorized database RPC.
+      let attachment: Record<string, any> | null = null;
       if (pendingFile) {
-        const fileName = `${tenant.id}/renewal_summary_${renewalId}_${Date.now()}.xlsx`;
-        const { data: uploadData, error: uploadErr } = await supabase.storage
-          .from(BUCKET)
-          .upload(fileName, pendingFile);
-
-        if (uploadErr) throw uploadErr;
-
-        // Attach to surv_audit_pack__a — {bucket, path}, not a stored `url`,
-        // so the download button (same pattern as ClientSummaryTab.tsx's
-        // downloadAudit) can sign a fresh URL on demand.
-        const { error: attachErr } = await supabase.rpc('append_renewal_audit_pack_entry', {
-          p_record_id: renewalId,
-          p_file_json: {
-            name: pendingFile.name,
-            bucket: BUCKET,
-            path: uploadData.path,
-            size: pendingFile.size,
-            uploadedAt: new Date().toISOString(),
-          },
-        });
-        if (attachErr) throw attachErr;
+        const suffix = pendingFile.name.toLowerCase().endsWith('.xls') ? '.xls' : '.xlsx';
+        const fileName = `${tenant.id}/renewal_summary_${renewalId}_${crypto.randomUUID()}${suffix}`;
+        const { data, error } = await supabase.storage.from(BUCKET).upload(fileName, pendingFile);
+        if (error) throw error;
+        attachment = {
+          name: pendingFile.name, bucket: BUCKET, path: data.path,
+          size: pendingFile.size, uploadedAt: new Date().toISOString(),
+        };
       }
+
+      const { data, error } = await supabase.rpc('import_renewal_summary', {
+        p_record_id: renewalId,
+        p_data: fields,
+        p_file_json: attachment,
+      });
+      if (error) {
+        // A definite PostgreSQL rejection rolled back the import. Network
+        // failures are ambiguous: preserve the bytes in case it committed.
+        if (attachment && /^[0-9A-Z]{5}$/.test(error.code || '')) {
+          await supabase.storage.from(BUCKET).remove([attachment.path]);
+        }
+        throw error;
+      }
+      const result = Array.isArray(data) ? data[0] : data;
+      if (!result?.success) throw new Error(result?.message || 'Summary import failed');
 
       toast.success('Summary imported successfully');
       onImported?.();
@@ -230,7 +146,7 @@ export default function SurveilanceImport({ renewalId, isCrmOrAdmin, onImported 
             className="text-sm text-gray-500 file:px-4 file:py-2 file:rounded file:bg-blue-50 file:border file:border-blue-200 file:text-blue-700 hover:file:bg-blue-100"
           />
         </div>
-        <p className="text-xs text-gray-500 mt-1">Excel only (.xlsx). Paste Surveillance 1 summary data.</p>
+        <p className="text-xs text-gray-500 mt-1">Excel only (.xlsx or .xls). Imports into this Surveillance 1 record after you review and apply the preview.</p>
       </div>
 
       {parsing && <p className="text-sm text-gray-600">Reading file...</p>}
@@ -238,12 +154,14 @@ export default function SurveilanceImport({ renewalId, isCrmOrAdmin, onImported 
       {rows && (
         <div className="bg-gray-50 p-3 rounded space-y-2">
           <h4 className="text-sm font-semibold text-gray-800">Preview ({rows.length} fields)</h4>
+          <p className="text-xs text-gray-500">{pendingFile?.name}</p>
+          <p className="text-xs text-gray-500">Current status: {currentStatus || 'Not started'}. Blank or invalid values are skipped.</p>
           <div className="max-h-96 overflow-y-auto space-y-1">
             {rows.map((row, idx) => (
               <div key={idx} className="text-xs text-gray-700 flex justify-between">
                 <span className="font-medium">{row.label}:</span>
                 <span className={row.value === null ? 'text-gray-400 italic' : ''}>
-                  {row.value === null ? '(blank)' : row.mapping.kind === 'date' ? formatIso(row.value) : row.value}
+                  {row.value === null ? (row.raw ? '(invalid date; skipped)' : '(blank; unchanged)') : row.mapping.kind === 'date' ? formatIso(row.value) : row.value}
                 </span>
               </div>
             ))}
@@ -259,7 +177,7 @@ export default function SurveilanceImport({ renewalId, isCrmOrAdmin, onImported 
       <div className="flex gap-2">
         <button
           onClick={apply}
-          disabled={!rows || applying}
+          disabled={!rows?.some(row => row.value !== null) || parsing || applying}
           className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {applying ? 'Importing...' : 'Apply'}

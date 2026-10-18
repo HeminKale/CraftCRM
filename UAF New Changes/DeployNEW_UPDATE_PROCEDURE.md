@@ -8,6 +8,23 @@ This document outlines the procedure for updating the Craft CRM application on t
 - Git repository access
 - PM2 process manager running
 
+## Inspection versus deployment
+
+`ssh`, `cd`, `git status`, `git log`, and `git diff` inspect the checkout.
+`git fetch origin main` downloads Git metadata without updating application files.
+`git pull`, builds and restarts are deployment operations. A Git commit on disk
+alone does not prove which compiled build is currently serving traffic.
+
+Before an update, inspect `pm2 list` and `pm2 describe craft-app` (and the PDF
+service) to confirm their actual script/cwd and names. Preserve untracked VPS
+files such as `ecosystem.config.js` and `start-pdf-service.sh`; do not use
+`git clean` or blindly overwrite them.
+
+Record the currently deployed commit and preserve the matching build and PM2
+configuration in a private backup before updating. For this branch, apply new
+SQL migrations 291–298 in order before deploying the matching frontend, after
+reviewing them and backing up the database. Source deployment does not apply SQL.
+
 ## Update Commands
 
 ### 1. Connect to VPS
@@ -23,7 +40,10 @@ cd /var/www/craft-app
 
 ### 3. Pull Latest Changes
 ```bash
-git pull origin main
+git fetch origin main
+git diff --stat HEAD origin/main
+# Review the fetched changes before running this deployment step:
+git merge --ff-only origin/main
 ```
 **Purpose**: Download and merge the latest changes from the main branch of the GitHub repository.
 
@@ -54,7 +74,7 @@ Fast-forward
 ```bash
 git log --oneline -5
 ```
-**Purpose**: Show the last 5 commits in a compact format to verify the deployment.
+**Purpose**: Show source history. Confirm the running build and endpoints separately; Git history alone does not verify deployment.
 
 **Expected Output**:
 ```
@@ -65,7 +85,17 @@ d2f949f Language added
 caa5105 Merge pull request #2 from HeminKale/Version_1
 ```
 
-### 4.1. npm run build
+### 4.1. Install dependencies and build
+
+```bash
+npm ci --include=dev
+npm run build
+```
+
+Run the build with no development server using the same `.next` directory.
+Do not restart the production process unless the build succeeds. Arrange the
+maintenance/release procedure before building into a directory used by a live
+process; a successful build alone is not a zero-downtime deployment strategy.
 
 ## Post-Deployment Steps
 
@@ -125,7 +155,10 @@ git diff
 git stash
 
 # Try pull again
-git pull origin main
+git fetch origin main
+git diff --stat HEAD origin/main
+# Review the fetched changes before running this deployment step:
+git merge --ff-only origin/main
 ```
 
 ### If services don't restart:
@@ -158,22 +191,35 @@ netstat -tlnp | grep :3000
 
 ## Rollback Procedure
 
-If deployment causes issues:
+Use the exact commit recorded before deployment, not `HEAD~1`: a pull can
+advance multiple commits and a merge's parent is not necessarily the last
+working deployment. Preserve all local/untracked service configuration.
+
+After confirming the tracked tree is clean and the saved commit is correct,
+restore the saved release/build and restart only the affected PM2 service.
+If rebuilding from the saved source commit instead, the sequence is:
 
 ```bash
-# Check previous commit
-git log --oneline -10
-
-# Rollback to previous commit
-git reset --hard HEAD~1
-
-# Restart services
-pm2 restart all
+# Substitute the full, previously recorded working commit.
+git switch --detach <previous-working-commit>
+npm ci --include=dev
+npm run build
+# Run only after a successful build, using the actual confirmed process name.
+pm2 restart craft-app
+pm2 status
 ```
+
+If PDF code/dependencies changed, restore its matching environment and restart
+its specific process too. Verify HTTP endpoints and user flows after rollback.
+Database changes require their own reviewed recovery plan; resetting source
+files does not reverse migrations or data changes.
 
 ## Notes
 
-- The VPS automatically picks up most changes without restart
+- Whether changes go live depends on the actual PM2 start command/build. Do not assume automatic reload.
 - PM2 manages the services and handles restarts
 - Environment variables are preserved during updates
 - Database migrations (if any) should be handled separately
+# Sprint 12 local email handoff — 18 October 2026
+
+Sprint 12 code is verified locally, not deployed. Keep sending disabled during migration/release preparation. Apply the previously supplied 291–298 (using current revised 298) before new **299_notification_outbox.sql**; no live SQL was applied by the assistant. Read [the complete migration list](New%20Help%20Doc/General/Manual_Migrations_291_298.md) and [Hostinger VPS/Resend runbook](New%20Help%20Doc/General/Sprint_12_VPS_Email_Runbook.md) before preparing the worker, signing secret, sender DNS and approved-recipient QA. The new route no longer supports arbitrary browser-supplied recipients/templates/attachment URLs. No suspension timers or old post-certificate chain are enabled. Sprint 13 requires separate go-ahead.

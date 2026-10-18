@@ -6,6 +6,7 @@ import { useSupabase } from '../../../providers/SupabaseProvider';
 import toast from 'react-hot-toast';
 import StageDateImport from './StageDateImport';
 import NewClientFromSummaryForm from './NewClientFromSummaryForm';
+import BulkSummaryUpload from '../BulkSummary/BulkSummaryUpload';
 
 interface Props {
   tabId: string;
@@ -334,6 +335,7 @@ function SummaryList() {
             onChange={e => setSearch(e.target.value)}
             className="border border-gray-300 rounded-md px-3 py-1.5 text-sm w-56 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
+          <BulkSummaryUpload workflow="initial" onImported={load} />
           {isAdmin && (
             <button
               onClick={() => setShowNewModal(true)}

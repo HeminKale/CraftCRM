@@ -1,3 +1,7 @@
+import { parseFlexibleDate as parseSummaryDate } from '../Renewal_Client/surveilanceSheetMapping';
+
+const normalizeLabel = (cell: any) => String(cell ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+
 // Recertification summary-sheet parsing — extracted for RecertificationImport.tsx
 // Mirrors Surveillance 1's surveilanceSheetMapping.ts pattern exactly (same
 // combined wide-table + vertical-list parser, same date helpers). Own file,
@@ -156,16 +160,7 @@ export function toIsoDateString(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-export function parseFlexibleDate(raw: any): string | null {
-  if (raw instanceof Date && !isNaN(raw.getTime())) {
-    return toIsoDateString(raw.getFullYear(), raw.getMonth() + 1, raw.getDate());
-  }
-  const s = String(raw ?? '').trim();
-  if (!s || s.startsWith('#')) return null; // blank, or an Excel error value (#REF!, #N/A, #VALUE!, ...)
-  const d = new Date(s);
-  if (isNaN(d.getTime())) return null;
-  return toIsoDateString(d.getFullYear(), d.getMonth() + 1, d.getDate());
-}
+export function parseFlexibleDate(raw: any): string | null { return parseSummaryDate(raw); }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -193,12 +188,11 @@ export function parseSummaryWorkbookRows(sheetRows: any[][]): ParsedRow[] {
 
   const headerRow = sheetRows[0] || [];
   const dataRow = sheetRows[1] || [];
-  let wideTableDetected = false;
+  const wideTableDetected = headerRow.filter(cell => WIDE_TABLE_MAPPINGS_RECERT[normalizeLabel(cell)]).length >= 2;
 
-  headerRow.forEach((cell, colIdx) => {
+  if (wideTableDetected) headerRow.forEach((cell, colIdx) => {
     const label = String(cell ?? '').trim().toLowerCase();
     if (label && WIDE_TABLE_MAPPINGS_RECERT[label]) {
-      wideTableDetected = true;
       const mapping = WIDE_TABLE_MAPPINGS_RECERT[label];
       const rawValue = String(dataRow[colIdx] ?? '').trim();
 
@@ -207,7 +201,7 @@ export function parseSummaryWorkbookRows(sheetRows: any[][]): ParsedRow[] {
         value = mapping.kind === 'date' ? parseFlexibleDate(rawValue) : rawValue;
       }
 
-      if (value !== null || rawValue === '') {
+      if (mapping.kind !== 'file') {
         parsed.push({
           label: label.charAt(0).toUpperCase() + label.slice(1),
           mapping,
@@ -241,7 +235,7 @@ export function parseSummaryWorkbookRows(sheetRows: any[][]): ParsedRow[] {
       // kind === 'file': skip parsing, handled separately
     }
 
-    if (value !== null || rawValue === '') {
+    if (mapping.kind !== 'file') {
       parsed.push({
         label: labelRaw.charAt(0).toUpperCase() + labelRaw.slice(1),
         mapping,
@@ -252,4 +246,13 @@ export function parseSummaryWorkbookRows(sheetRows: any[][]): ParsedRow[] {
   }
 
   return parsed;
+}
+
+export function getRecertImportStatus(rows: ParsedRow[], currentStatus: string | null): string | null {
+  const current = currentStatus ? RECERT_STAGE_PROGRESSION.findIndex(stage => stage.status === currentStatus) : -1;
+  if (currentStatus && current === -1) return null;
+  const columns = new Set(rows.filter(row => row.value && row.mapping.kind === 'date').map(row => row.mapping.extColumn));
+  let implied = -1;
+  RECERT_STAGE_PROGRESSION.forEach((stage, i) => { if (columns.has(stage.column)) implied = i; });
+  return implied > current ? RECERT_STAGE_PROGRESSION[implied].status : null;
 }

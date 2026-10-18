@@ -1,6 +1,10 @@
+> Current QA follow-up: see [SummaryUpload QA fixes](../New Help Doc/Renewal/Sprints/Sprint_10_QA_SummaryUpload.md).
+> The sprint history below records earlier decisions and live-check claims; it
+> is not evidence that the current migrations have been applied to production.
+
 # Rights Matrix — Sprint Plan (from S6_rights_matrix_verification.md)
 
-Source: [`S6_rights_matrix_verification.md`](../New Help Doc/S6_rights_matrix_verification.md)'s
+Source: [`S6_rights_matrix_verification.md`](../New Help Doc/New/S6_rights_matrix_verification.md)'s
 "Still open for the next session" section. This plan turns that list into
 sprints.
 

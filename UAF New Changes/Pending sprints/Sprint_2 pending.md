@@ -1,3 +1,9 @@
+> Historical Sprint 2 notes. Rejection tests are currently deferred by the
+> stakeholder. Do not run the historical state-changing examples on real client
+> records. Use disposable fixtures with explicit setup for each test; a test
+> that changes record state is not read-only. Current permission/import
+> regressions run with `npm run test:surveillance` in an isolated database.
+
 # Sprint 2 — Pending Verification Items
 
 Sprint 2 (Stage 2 schema + RPCs, migration `234_stage2_audit_workflow.sql`) has its
@@ -53,7 +59,7 @@ BEGIN;
 SELECT set_config('request.jwt.claims', json_build_object('sub','<crm_or_client_user_id>')::text, true);
 SELECT * FROM public.review_stage2_ncr_rca('<record_id>','accept',NULL);
 -- expect success=false, 'Access denied: Auditor role required'
-COMMIT;
+ROLLBACK;
 ```
 
 ## 3. File-upload auto-advance — not yet tested with real files
@@ -188,7 +194,7 @@ SELECT set_config('request.jwt.claims', json_build_object('sub','<crm_or_client_
 SELECT * FROM public.submit_stage1_tech_findings('<record_id>','test findings');
 -- expect: success = false, message = 'Access denied: Tech Reviewer role required'
 ROLLBACK;
-That pattern (swap the RPC name, keep the same denied user) covers all 9 RPCs — every Auditor-gated one (review_stage1_ncr_rca, close_stage1_audit, review_stage2_ncr_rca, review_stage2_evidences, close_stage2_audit) should deny the same non-Auditor user the same way, and every Tech-gated one (submit_stage1_tech_findings, accept_stage1_tech_review, submit_stage2_tech_findings, accept_stage2_tech_review) should deny the same non-Tech user. You don't need to run all 9 individually if the first one of each type passes — the gate logic is identical code copy-pasted across all of them, so one clean pass per gate type is solid evidence the rest behave the same.
+That pattern (swap the RPC name, keep the same denied user) covers all 9 RPCs — every Auditor-gated one (review_stage1_ncr_rca, close_stage1_audit, review_stage2_ncr_rca, review_stage2_evidences, close_stage2_audit) should deny the same non-Auditor user the same way, and every Tech-gated one (submit_stage1_tech_findings, accept_stage1_tech_review, submit_stage2_tech_findings, accept_stage2_tech_review) should deny the same non-Tech user. Run all 9 individually with allowed, denied and assigned/unassigned users; do not infer authorization correctness from a single example. Similar-looking functions can have different assignment, tenant and status conditions.
 
 Paste back whatever you get and I'll update the pending doc.
 =============================================

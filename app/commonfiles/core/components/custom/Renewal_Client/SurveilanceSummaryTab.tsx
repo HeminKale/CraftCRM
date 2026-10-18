@@ -5,6 +5,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useSupabase } from '../../../providers/SupabaseProvider';
 import toast from 'react-hot-toast';
 import SurveilanceImport from './SurveilanceImport';
+import BulkSummaryUpload from '../BulkSummary/BulkSummaryUpload';
 
 // Mirrors ClientSummaryTab.tsx's architecture exactly, adapted for the fact
 // that Surveillance 1 has NO separate summary table — unlike External Client
@@ -365,6 +366,7 @@ function SummaryList() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
         <h2 className="text-base font-semibold text-gray-900">Surveillance 1 Summary</h2>
         <div className="flex items-center gap-2">
+          <BulkSummaryUpload workflow="surveillance" onImported={load} />
           <input
             type="text"
             placeholder="Search by company…"

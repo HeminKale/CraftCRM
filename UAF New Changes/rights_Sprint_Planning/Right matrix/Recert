@@ -1,0 +1,19 @@
+RIGHTS	Client	CRM	auditor	tech reviewr	cdc	admin 
+Recertification intimation	view / email	upload			view	view/upload/accept
+Application form 	upload	view			view	view/upload/accept
+Application acceptance 		accept			view	view/upload/accept
+Quotation 	view	upload			view	view/upload/accept
+Client agreement		upload			view	view/upload/accept
+Signed client agreement 	accept n sign	view			view	view/upload/accept
+assign team 		upload	view	view	view	view/upload/accept
+Recert audit plan 	view	upload	upload	view	view	view/upload/accept
+Recert plan accept	accept				view	view/upload/accept
+Recert ncr	view	upload	upload		view	view/upload/accept
+Recert ncr RCA	upload	view	view	view	view	view/upload/accept
+Recert ncr RCA acceptance		view	accept	view	view	view/upload/accept
+Recert ncr evidences	upload	view	accept	view	view	view/upload/accept
+Recert audit report 	view only after tech review acceptance	upload	upload	view	view	view/upload/accept
+Recert tech review findings		view	view/ close	write	view	view/upload/accept
+Recert tech review checklist		view	view	upload	view	view/upload/accept
+CDC		view			upload	view/upload/accept
+certificate issue	view	upload			view	view/upload/accept  

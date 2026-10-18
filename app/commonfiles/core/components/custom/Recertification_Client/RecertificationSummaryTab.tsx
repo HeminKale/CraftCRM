@@ -5,6 +5,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useSupabase } from '../../../providers/SupabaseProvider';
 import toast from 'react-hot-toast';
 import RecertificationImport from './RecertificationImport';
+import BulkSummaryUpload from '../BulkSummary/BulkSummaryUpload';
 
 // Mirrors SurveilanceSummaryTab.tsx's architecture exactly (confirmed
 // decision: no separate summary table for Recertification either — same
@@ -378,6 +379,7 @@ function SummaryList() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
         <h2 className="text-base font-semibold text-gray-900">Recertification Summary</h2>
         <div className="flex items-center gap-2">
+          <BulkSummaryUpload workflow="recertification" onImported={load} />
           <input
             type="text"
             placeholder="Search by company…"

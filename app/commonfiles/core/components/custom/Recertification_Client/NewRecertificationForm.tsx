@@ -127,7 +127,7 @@ export default function NewRecertificationForm({ objectId, tenantId, onSuccess, 
       if (!result?.success) throw new Error(result?.message || 'Failed to create recertification record');
 
       const newRecordId: string = result.record_id;
-      let letterUploaded = false;
+
 
       // Upload intimation letter if provided
       if (file && objectId) {
@@ -159,12 +159,14 @@ export default function NewRecertificationForm({ objectId, tenantId, onSuccess, 
                 .upload(storage_path, file, { upsert: true });
 
               if (!storageErr) {
-                await supabase.rpc('finalize_file_upload', {
+                const { data: finalData, error: finalError } = await supabase.rpc('finalize_file_upload', {
                   p_attachment_id:   attachment_id,
                   p_final_byte_size: file.size,
                   p_final_mime_type: file.type || null,
                 });
-                letterUploaded = true;
+                if (finalError || !finalData?.[0]?.success) {
+                  throw new Error('Letter upload could not be finalized');
+                }
               }
             } else {
               toast('Letter upload failed — you can upload from the record.', { icon: '⚠️' });
@@ -179,29 +181,9 @@ export default function NewRecertificationForm({ objectId, tenantId, onSuccess, 
 
       toast.success('Recertification record created');
 
-      // Notify the client by email — best-effort, never blocks record
-      // creation (same soft-failure philosophy as the letter upload above).
-      if (email.trim()) {
-        try {
-          const selectedClient = clients.find(c => c.id === clientId);
-          const companyLabel = selectedClient?.label || undefined;
-          const res = await fetch('/api/notifications/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              to: email.trim(),
-              template: 'recertification_intimation',
-              data: { companyName: companyLabel, hasLetter: letterUploaded },
-            }),
-          });
-          const notifyResult = await res.json().catch(() => null);
-          if (!notifyResult?.success) {
-            toast('Record created, but the notification email was not sent.', { icon: '⚠️' });
-          }
-        } catch {
-          toast('Record created, but the notification email was not sent.', { icon: '⚠️' });
-        }
-      }
+      // Sprint 12: record creation and finalised intimation uploads queue mail
+      // transactionally. No browser fetch or signed URL is required.
+      toast('Email delivery is tracked separately on the record.');
 
       onSuccess?.();
     } catch (err: any) {

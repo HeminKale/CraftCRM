@@ -16,6 +16,7 @@ import RenewalActionPanel from '../custom/Renewal_Client/RenewalActionPanel';
 import RecertificationWorkflowBar from '../custom/Recertification_Client/RecertificationWorkflowBar';
 import RecertificationActionPanel from '../custom/Recertification_Client/RecertificationActionPanel';
 import toast from 'react-hot-toast';
+import NotificationDeliveryPanel from './NotificationDeliveryPanel';
 import { useUserMap, resolveUserValue } from '../../hooks/useUserMap';
 
 interface RecordDetailViewProps {
@@ -157,10 +158,12 @@ const STAGE_REPORT_UNLOCK_AT: Record<string, { order: string[]; unlockAt: string
   recert_audit_report:       { order: RECERT_STATUS_ORDER, unlockAt: 'Recert_Tech_Findings_Given' },
 };
 
-const isStageReportLockedForClient = (fieldName: string, recordData: RecordData | null, currentUserId?: string): boolean => {
-  const rule = STAGE_REPORT_UNLOCK_AT[fieldName];
+const isStageReportLockedForClient = (fieldName: string, recordData: RecordData | null, currentUserId?: string, currentUserEmail?: string): boolean => {
+  const rule = STAGE_REPORT_UNLOCK_AT[fieldName.replace(/__a$/, '')];
   if (!rule) return false;
-  if (!currentUserId || recordData?.['client_user_id__a'] !== currentUserId) return false;
+  const linkedById = !!currentUserId && recordData?.['client_user_id__a'] === currentUserId;
+  const linkedByEmail = !!currentUserEmail && String(recordData?.['email__a'] || '').toLowerCase() === currentUserEmail.toLowerCase();
+  if (!linkedById && !linkedByEmail) return false;
   const status = recordData?.['status__a'];
   const currentRank = status ? rule.order.indexOf(status) : -1;
   const unlockRank = rule.order.indexOf(rule.unlockAt);
@@ -212,36 +215,12 @@ const RENEWAL_FILE_FIELD_UPLOAD_ROLE: Record<string, FileUploadRule> = {
   surv_ncr_rca:                   'client_only',
   surv_tech_findings_file:        'tech_only',
   cdc_report:                     'cdc_only',
-  // Sprint 8 — Suspension & Withdrawal. Server-side twin lives in
-  // supabase/migrations/278_surv_suspension_withdrawal_start_upload.sql.
   surv_suspension_intimation:     'crm_only',
   surv_suspension_decision:       'cdc_only',
   surv_suspension_letter:         'crm_only',
   surv_withdrawal_intimation:     'crm_only',
   surv_withdrawal_decision:       'cdc_only',
   surv_withdrawal_letter:         'crm_only',
-};
-
-// Sprint 8 — the CRM-uploaded fields whose upload triggers an email to the
-// linked client (the two CDC-uploaded decision fields never trigger an
-// email, confirmed — only rows with "get email" in the Client column of the
-// rights matrix send mail). Field name → the notifications/send template
-// name (see app/api/notifications/send/route.ts).
-//
-// surveillance_intimation_letter added after the fact (bug found in
-// production use): the letter's email previously only fired from
-// NewRenewalForm.tsx's one-time record-creation flow — if CRM created the
-// record without attaching the letter (it's optional there) and uploaded
-// it later from the record page, no email ever went out, even after an
-// email__a was added to the record. Reuses the same 'surveillance_intimation'
-// template the creation-flow path already uses, so both paths send an
-// identical email.
-const RENEWAL_EMAIL_ON_UPLOAD_FIELDS: Record<string, string> = {
-  surveillance_intimation_letter: 'surveillance_intimation',
-  surv_suspension_intimation:     'surveillance_suspension_intimation',
-  surv_suspension_letter:         'surveillance_suspension_letter',
-  surv_withdrawal_intimation:     'surveillance_withdrawal_intimation',
-  surv_withdrawal_letter:         'surveillance_withdrawal_letter',
 };
 
 // Recertification (recertification_clients__a) — Sprint 5. Server-side twin
@@ -267,18 +246,6 @@ const RECERT_FILE_FIELD_UPLOAD_ROLE: Record<string, FileUploadRule> = {
   recert_certificates:      'crm_only',
 };
 
-// Recertification Sprint 9 — mirrors RENEWAL_EMAIL_ON_UPLOAD_FIELDS above,
-// same bug class: previously there was NO map at all for Recertification,
-// so a separately-uploaded recert_intimation_letter (not attached at
-// creation time in NewRecertificationForm.tsx) never sent an email, ever —
-// worse than Surveillance 1's version of this bug, which at least covered
-// the Sprint 8 fields. Reuses the 'recertification_intimation' template
-// NewRecertificationForm.tsx's one-time creation-flow email already uses,
-// so both paths send an identical email.
-const RECERT_EMAIL_ON_UPLOAD_FIELDS: Record<string, string> = {
-  recert_intimation_letter: 'recertification_intimation',
-};
-
 const isFileUploadAllowedForRole = (
   fieldName: string,
   recordData: RecordData | null,
@@ -287,26 +254,43 @@ const isFileUploadAllowedForRole = (
   customRoleName: string | null,
   isRenewalObject: boolean,
   isRecertObject: boolean = false,
+  currentUserEmail?: string,
 ): boolean => {
+  // Suspension/withdrawal is on hold, including administrator uploads.
+  // Previously uploaded documents remain available through the read path.
+  if (isRenewalObject && /^surv_(suspension|withdrawal)_/.test(fieldName)) return false;
   const rule = (
     isRecertObject ? RECERT_FILE_FIELD_UPLOAD_ROLE :
     isRenewalObject ? RENEWAL_FILE_FIELD_UPLOAD_ROLE :
     EXTERNAL_CLIENT_FILE_FIELD_UPLOAD_ROLE
-  )[fieldName];
+  )[fieldName.replace(/__a$/, '')];
   if (!rule) return true; // not one of the hard-floored fields — Permission Set decides alone
 
   if (userRole === 'admin') return true;
 
   if (rule === 'client_only') {
-    return !!currentUserId && recordData?.['client_user_id__a'] === currentUserId;
+    return (!!currentUserId && recordData?.['client_user_id__a'] === currentUserId) ||
+      ((isRenewalObject || isRecertObject) && !!currentUserEmail && String(recordData?.['email__a'] || '').toLowerCase() === currentUserEmail.toLowerCase());
   }
 
   const role = (customRoleName || '').toLowerCase();
   if (rule === 'crm_only')  return role.includes('crm');
-  if (rule === 'tech_only') return role.includes('tech');
+  if (rule === 'tech_only') return role.includes('tech') &&
+    (!isRenewalObject && !isRecertObject || recordData?.['tech_reviewer_id__a'] === currentUserId);
   if (rule === 'cdc_only')  return role.includes('cdc');
-  return role.includes('crm') || role.includes('auditor'); // 'crm_or_auditor'
+  return role.includes('crm') || role.includes('auditor') &&
+    (!isRenewalObject && !isRecertObject || recordData?.['auditor_id__a'] === currentUserId); // 'crm_or_auditor'
 };
+
+// A blank Assign Team cell is no view access for the client, including
+// the progress bar and generic layout fields. The API also strips these.
+const WORKFLOW_TEAM_FIELDS = new Set(['auditor_id', 'tech_reviewer_id', 'team_assigned_date', 'recert_team_assigned_date', 'auditor_name', 'tech_reviewer_name', 'auditor_team', 'lead_auditor']);
+const isWorkflowClientViewer = (record: RecordData | null, userId?: string, email?: string, systemRole?: string, customRole?: string | null) =>
+  systemRole !== 'admin' && (
+    (!!userId && record?.['client_user_id__a'] === userId) ||
+    (!!email && String(record?.['email__a'] || '').toLowerCase() === email.toLowerCase()) ||
+    /external.*(client|customer)/i.test(customRole || '')
+  );
 
 // Helper function to normalize field names by removing __a suffix
 const normalizeFieldName = (fieldName: string): string => {
@@ -1231,64 +1215,11 @@ export default function RecordDetailView({
     }
   };
 
-  // Fires a "get email" notification when one of the CRM-uploaded fields in
-  // RENEWAL_EMAIL_ON_UPLOAD_FIELDS (Surveillance 1) or
-  // RECERT_EMAIL_ON_UPLOAD_FIELDS (Recertification) is uploaded on the
-  // matching object. Originally Renewal-only (just the four Sprint 8
-  // Suspension/Withdrawal fields; surveillance_intimation_letter added
-  // later, see that map's own comment) — extended to Recertification in
-  // Sprint 9 once the exact same "letter uploaded separately, no email
-  // ever sent" bug was confirmed there too, with no map at all previously.
-  // Called from every FileUploadField's onUploadComplete on this page; safe
-  // to call for any object/field — it's a no-op unless the object matches
-  // AND the field is in that object's map. Same soft-failure philosophy as
-  // every other notification in this epic: failure is a toast warning
-  // only, never blocks the upload that already succeeded by the time this
-  // runs.
-  const maybeSendRenewalUploadEmail = async (info?: UploadedFileInfo) => {
-    if (!info) return;
-    const isRenewalObject = objectTechName === 'renewal_clients__a';
-    const isRecertObject  = objectTechName === 'recertification_clients__a';
-    if (!isRenewalObject && !isRecertObject) return;
-
-    const template = isRecertObject
-      ? RECERT_EMAIL_ON_UPLOAD_FIELDS[info.fieldName]
-      : RENEWAL_EMAIL_ON_UPLOAD_FIELDS[info.fieldName];
-    if (!template) return; // not one of this object's email-triggering fields
-
-    const recipient = recordData?.['email__a'];
-    if (!recipient) return; // no email on file for this record — nothing to send to
-
-    try {
-      const { data: signedData, error: signErr } = await supabase.storage
-        .from(info.bucket)
-        .createSignedUrl(info.path, 300); // 5 min — just enough for the API route to fetch it
-      if (signErr || !signedData?.signedUrl) return;
-
-      const companyLabel = recordData?.['company_name__a'] || recordData?.['name'] || undefined;
-
-      const res = await fetch('/api/notifications/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: recipient,
-          template,
-          // hasLetter: true — this path only ever runs after a successful
-          // upload with a real attachmentUrl below, so the file genuinely
-          // is attached. Only the 'surveillance_intimation' template reads
-          // this flag (picks "attached to this email" vs "will follow
-          // shortly" wording); harmless extra key for the other templates.
-          data: { companyName: companyLabel, hasLetter: true },
-          attachmentUrl: signedData.signedUrl,
-        }),
-      });
-      const result = await res.json().catch(() => null);
-      if (!result?.success) {
-        toast('File uploaded, but the notification email was not sent.', { icon: '⚠️' });
-      }
-    } catch {
-      toast('File uploaded, but the notification email was not sent.', { icon: '⚠️' });
-    }
+  // The database finalisation transaction queues mail, including replacements.
+  // Keep this callback for upload callers; it only refreshes delivery evidence.
+  const [notificationRefresh, setNotificationRefresh] = useState(0);
+  const refreshNotificationHistory = async (_info?: UploadedFileInfo) => {
+    setNotificationRefresh(value => value + 1);
   };
 
   // Render editable field input - UPDATED to match create modal exactly
@@ -1434,7 +1365,7 @@ export default function RecordDetailView({
           recordId={recordId}
           multiple={field.type === 'files'}
           companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
-          onUploadComplete={(info) => { setRefreshKey(k => k + 1); maybeSendRenewalUploadEmail(info); }}
+          onUploadComplete={(info) => { setRefreshKey(k => k + 1); refreshNotificationHistory(info); }}
         />
       );
     }
@@ -1654,6 +1585,9 @@ export default function RecordDetailView({
                                 if (!field) {
                                   return null;
                                 }
+                                if (['renewal_clients__a', 'recertification_clients__a'].includes(objectTechName) &&
+                                    WORKFLOW_TEAM_FIELDS.has(field.name.replace(/__a$/, '')) &&
+                                    isWorkflowClientViewer(recordData, user?.id, user?.email, userProfile?.role, customRoleName)) return null;
                                 
                                 // Get field value from record data using normalized field names
                                 const fieldValue = findFieldValue(recordData || {}, field.name);
@@ -1670,7 +1604,7 @@ export default function RecordDetailView({
                                     </label>
                                     
                                     {(field.type === 'file' || field.type === 'files') ? (
-                                      isStageReportLockedForClient(field.name, recordData, user?.id) ? (
+                                      userProfile?.role !== 'admin' && isStageReportLockedForClient(field.name, recordData, user?.id, user?.email) ? (
                                         <div className="text-sm text-gray-500 bg-gray-50 px-3 py-2 rounded border italic">
                                           Available once the Tech Reviewer has reviewed the audit report
                                         </div>
@@ -1688,10 +1622,11 @@ export default function RecordDetailView({
                                               field.name, recordData, user?.id, userProfile?.role, customRoleName,
                                               objectTechName === 'renewal_clients__a',
                                               objectTechName === 'recertification_clients__a',
+                                              user?.email,
                                             )
                                           }
                                           companyName={recordData?.['Company_name__a'] || recordData?.['name'] || undefined}
-                                          onUploadComplete={(info) => { setRefreshKey(k => k + 1); maybeSendRenewalUploadEmail(info); }}
+                                          onUploadComplete={(info) => { setRefreshKey(k => k + 1); refreshNotificationHistory(info); }}
                                         />
                                       )
                                     ) : isEditing && can('edit', 'field', field.id) ? (
@@ -1916,6 +1851,12 @@ export default function RecordDetailView({
   // Main render
   return (
     <div className="space-y-4">
+      <NotificationDeliveryPanel objectName={objectTechName} recordId={recordId} refresh={notificationRefresh} />
+      {objectTechName === 'external_clients__a' && recordData['status__a'] === 'Suspended' && (
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900" role="status">
+          <strong>Suspended</strong> — Contact CRM about late responses or restoration.
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">{recordName}</h2>
         <div className="flex items-center space-x-3">
@@ -2059,6 +2000,7 @@ export default function RecordDetailView({
       {objectTechName === 'renewal_clients__a' && recordData && (
         <>
           <RenewalWorkflowBar
+            hideTeamDetails={isWorkflowClientViewer(recordData, user?.id, user?.email, userProfile?.role, customRoleName)}
             status={recordData['status__a'] ?? null}
             recordData={recordData}
           />
@@ -2082,6 +2024,7 @@ export default function RecordDetailView({
       {objectTechName === 'recertification_clients__a' && recordData && (
         <>
           <RecertificationWorkflowBar
+            hideTeamDetails={isWorkflowClientViewer(recordData, user?.id, user?.email, userProfile?.role, customRoleName)}
             status={recordData['status__a'] ?? null}
             recordData={recordData}
           />

@@ -87,8 +87,8 @@ export default function RecertificationActionPanel({
   // RenewalActionPanel carries, built in here from the start.
   const isClientOnly = !isAdmin && (currentUserId === clientUserId || isEmailMatch);
   const isCRM         = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('crm'));
-  const isAuditor     = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('auditor'));
-  const isTech        = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('tech'));
+  const isAuditor     = isAdmin || (!isClientOnly && recordData['auditor_id__a'] === currentUserId && lower(currentCustomRole).includes('auditor'));
+  const isTech        = isAdmin || (!isClientOnly && recordData['tech_reviewer_id__a'] === currentUserId && lower(currentCustomRole).includes('tech'));
   const isCdc         = isAdmin || (!isClientOnly && lower(currentCustomRole).includes('cdc'));
   const isLinkedClient = isAdmin || currentUserId === clientUserId || isEmailMatch;
 

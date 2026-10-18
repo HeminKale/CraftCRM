@@ -28,14 +28,14 @@ assumes throughout), **S3.md**, **S4.md**, **S5.md**.
 
 **New migrations, all written, none applied yet — apply all three (any order,
 no interdependency between them):**
-- [`242_register_remaining_stage_notes_and_dates.sql`](../../supabase/migrations/242_register_remaining_stage_notes_and_dates.sql) — registers 12 pre-existing notes/date columns in `tenant.fields` (from before this session's rights-matrix work; unrelated to it, just also still pending)
-- [`243_cdc_role_upload_gate.sql`](../../supabase/migrations/243_cdc_role_upload_gate.sql) — redefines `finalize_file_upload`: `cdc_report` auto-advance now CDC-role-only
-- [`244_assign_stage_team.sql`](../../supabase/migrations/244_assign_stage_team.sql) — new `auditor_id__a`/`tech_reviewer_id__a` columns, new `Team_Assigned` status, 2 new RPCs (`get_tenant_users_by_role_pattern`, `assign_stage_team`), redefines `start_file_upload` (hard block on Stage 1 plan upload) and 7 existing Auditor/Tech-Reviewer RPCs (assignment check added)
+- [`242_register_remaining_stage_notes_and_dates.sql`](../../../supabase/migrations/242_register_remaining_stage_notes_and_dates.sql) — registers 12 pre-existing notes/date columns in `tenant.fields` (from before this session's rights-matrix work; unrelated to it, just also still pending)
+- [`243_cdc_role_upload_gate.sql`](../../../supabase/migrations/243_cdc_role_upload_gate.sql) — redefines `finalize_file_upload`: `cdc_report` auto-advance now CDC-role-only
+- [`244_assign_stage_team.sql`](../../../supabase/migrations/244_assign_stage_team.sql) — new `auditor_id__a`/`tech_reviewer_id__a` columns, new `Team_Assigned` status, 2 new RPCs (`get_tenant_users_by_role_pattern`, `assign_stage_team`), redefines `start_file_upload` (hard block on Stage 1 plan upload) and 7 existing Auditor/Tech-Reviewer RPCs (assignment check added)
 
 **Frontend files edited (already live in the working tree, not gated by any migration apply — but some of these won't function correctly until 243/244 are applied, since they call the new RPCs):**
-- [`RecordDetailView.tsx`](../../app/commonfiles/core/components/Application/RecordDetailView.tsx) — `stage1_report`/`stage2_report` hidden from the linked client until Tech Reviewer findings (works today, no migration dependency — reads existing `status__a`/`client_user_id__a`)
-- [`ClientWorkflowBar.tsx`](../../app/commonfiles/core/components/custom/External_Client/ClientWorkflowBar.tsx) — added `Team_Assigned` to the `STAGES` array (cosmetically fine before 244 is applied — it just won't ever match a real record's status until then)
-- [`StageAuditActionPanel.tsx`](../../app/commonfiles/core/components/custom/External_Client/StageAuditActionPanel.tsx) — new Assign Team prompt + read-only assigned-team strip (calls `assign_stage_team`/`get_tenant_users_by_role_pattern` — **will error until 244 is applied**), `showPlanUploadPrompt` tightened to require `Team_Assigned` status, `showCdcUploadPrompt` fixed to check the CDC role instead of CRM/Tech
+- [`RecordDetailView.tsx`](../../../app/commonfiles/core/components/Application/RecordDetailView.tsx) — `stage1_report`/`stage2_report` hidden from the linked client until Tech Reviewer findings (works today, no migration dependency — reads existing `status__a`/`client_user_id__a`)
+- [`ClientWorkflowBar.tsx`](../../../app/commonfiles/core/components/custom/External_Client/ClientWorkflowBar.tsx) — added `Team_Assigned` to the `STAGES` array (cosmetically fine before 244 is applied — it just won't ever match a real record's status until then)
+- [`StageAuditActionPanel.tsx`](../../../app/commonfiles/core/components/custom/External_Client/StageAuditActionPanel.tsx) — new Assign Team prompt + read-only assigned-team strip (calls `assign_stage_team`/`get_tenant_users_by_role_pattern` — **will error until 244 is applied**), `showPlanUploadPrompt` tightened to require `Team_Assigned` status, `showCdcUploadPrompt` fixed to check the CDC role instead of CRM/Tech
 
 `npx tsc --noEmit` was run clean after each frontend edit this session.
 
@@ -54,7 +54,7 @@ no interdependency between them):**
 
 | # | Right (image) | Image says | Live system | Verdict |
 |---|---|---|---|---|
-| 1 | Application form | Client uploads, CRM views | **Correction (2026-08-01, sprint planning session) — the row-1 verdict above was wrong.** `application_Form__a` **does** exist as a real registered `file`-type field on `external_clients__a` and holds real data — confirmed via a live query against `tenant.external_clients__a` (see `rights_Sprint_Planning/rights_S3.md`). It's populated by [`NewClientForm.tsx`](../../app/commonfiles/core/components/custom/External_Client/NewClientForm.tsx), the bulk Excel-import tool ("Upload an Excel application form... to create clients in bulk") — the source Excel *is* the stored application form. No `start_file_upload`/`finalize_file_upload` block exists for this field anywhere in the migrations (confirmed by grep across all of `supabase/migrations/`), so nothing stops any role with generic field-edit access from re-uploading/replacing it outside that tool. | ✅ Field exists, is populated via the Excel bulk-import tool, no role gate needed — stakeholder confirmed current behavior is fine as-is (`rights_S3.md`) |
+| 1 | Application form | Client uploads, CRM views | **Correction (2026-08-01, sprint planning session) — the row-1 verdict above was wrong.** `application_Form__a` **does** exist as a real registered `file`-type field on `external_clients__a` and holds real data — confirmed via a live query against `tenant.external_clients__a` (see `rights_Sprint_Planning/rights_S3.md`). It's populated by [`NewClientForm.tsx`](../../../app/commonfiles/core/components/custom/External_Client/NewClientForm.tsx), the bulk Excel-import tool ("Upload an Excel application form... to create clients in bulk") — the source Excel *is* the stored application form. No `start_file_upload`/`finalize_file_upload` block exists for this field anywhere in the migrations (confirmed by grep across all of `supabase/migrations/`), so nothing stops any role with generic field-edit access from re-uploading/replacing it outside that tool. | ✅ Field exists, is populated via the Excel bulk-import tool, no role gate needed — stakeholder confirmed current behavior is fine as-is (`rights_S3.md`) |
 | 2 | Application acceptance | CRM accepts | `review_client_application` (213) — CRM/admin only, exact match | ✅ |
 | 3 | Quotation | Client views, CRM uploads | Hard block in `start_file_upload` (232) — CRM/admin only for upload; auto-advance in `finalize_file_upload` | ✅ |
 | 4 | Client agreement | CRM uploads | **No hard block today.** `clientAgreement__c` upload is currently open to anyone with Permission-Set field-edit access — the CRM-only restriction is migration **239, written but not applied**. | ⚠️ Matches the image only once 239 is applied |
@@ -107,7 +107,7 @@ achievable independently:
   session to do here.**
 - `stage1_report` conditional view → **implemented this session**, see below.
 
-**Implemented:** [`RecordDetailView.tsx`](../../app/commonfiles/core/components/Application/RecordDetailView.tsx)
+**Implemented:** [`RecordDetailView.tsx`](../../../app/commonfiles/core/components/Application/RecordDetailView.tsx)
 now hides both `stage1_report` and `stage2_report` from the linked client
 (`client_user_id__a === current user`) until the respective stage's Tech
 Reviewer has submitted findings:
@@ -161,7 +161,7 @@ PS-over-RPC preference:
   `CDC_Approved`) — unavoidably RPC.** No Permission Set anywhere in this app
   is consulted by workflow auto-advance logic, confirmed uniformly across
   every RPC in the codebase — this half genuinely cannot be done through PS.
-  **Implemented:** [`243_cdc_role_upload_gate.sql`](../../supabase/migrations/243_cdc_role_upload_gate.sql)
+  **Implemented:** [`243_cdc_role_upload_gate.sql`](../../../supabase/migrations/243_cdc_role_upload_gate.sql)
   — `finalize_file_upload`'s `cdc_report` block now gates on `_is_cdc`
   (custom role matches `%cdc%`, or admin) instead of `_is_crm_or_tech`. CRM's
   and Tech Reviewer's uploads no longer advance status. **Written, not yet
