@@ -10,7 +10,8 @@ export const normalizeCompany = (value: unknown) => String(value ?? '').toLowerC
 // Match complete standard numbers, not ISO prefixes or revision years.
 export function standardNumbersInOrder(value: unknown): string[] {
   const aliases: Record<string, string> = { '9': '9001', '14': '14001', '45': '45001' };
-  return Array.from(new Set((String(value ?? '').match(/(?<!\d)\d{1,6}(?!\d)/g) || [])
+  const matches: string[] = String(value ?? '').match(/(?<!\d)\d{1,6}(?!\d)/g) || [];
+  return Array.from(new Set(matches
     .filter(n => (Object.prototype.hasOwnProperty.call(aliases, n) || n.length >= 4) && !(+n >= 1900 && +n <= 2099))
     .map(n => aliases[n] || n)));
 }
