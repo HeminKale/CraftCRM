@@ -76,11 +76,8 @@ export function parseBulkRows(sheet: unknown[][], workflow: BulkWorkflow, overri
     const data: Record<string, string> = {}, errors: string[] = [];
     headers.forEach((header, i) => {
       const raw = String(cells[i] ?? '').trim(), column = columns[i];
-      if (normalizeHeader(header) === 'type' && raw) {
-        const type = normalizeHeader(raw).replace(/\s/g, '');
-        const valid = workflow === 'initial' ? ['initial','new','newclient'] : workflow === 'surveillance' ? ['surveillance','surveillance1','surv1','renewal'] : ['recert','recertification'];
-        if (!valid.includes(type)) errors.push(`Type "${raw}" does not belong to this ${workflow} upload.`);
-      }
+      // The business sheet's "type" column (e.g. "Initial") describes the client's
+      // certification type, not which upload it belongs to, so it is never validated.
       if (!column || !raw) return;
       const field = spec.fields[column];
       if (!field) { errors.push(`Unknown mapping for ${header}.`); return; }

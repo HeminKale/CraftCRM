@@ -38,8 +38,13 @@ test('bulk parser reads sample wide dates, flags unmapped headings, bad dates, c
   assert.ok(rollover.rows[0].errors.some(e=>e.includes('Invalid')));
   const mixed=mapping.parseBulkRows([['Company name','standard','certificate no'],['Acme','9001,27001','ONE']], 'initial');
   assert.ok(mixed.rows.every(r=>r.errors.some(e=>e.includes('Cannot pair'))));
-  const conflict=mapping.parseBulkRows([['company name','standard','total mandays','surv mandays'],['Acme','9','8','3']], 'surveillance');
+  const conflict=mapping.parseBulkRows([['company name','standard','surv mandays','surveillance 1 mandays'],['Acme','9','8','3']], 'surveillance');
   assert.ok(conflict.rows[0].errors.some(e=>e.includes('Conflicting')));
+  // Shape of the business "Sur summary" sheet: type=Initial, total mandays differs from Surveillance 1 mandays.
+  const surv=mapping.parseBulkRows([['COMPANY NAME','Standard','type','total mandays','Surveillance 1 mandays','surv tech review','certificate issue'],['Payal','ISO 9001:2015','Initial','8','3','31-Jan-26','2-Feb-26']],'surveillance');
+  assert.equal(surv.rows[0].errors.length,0);assert.equal(surv.rows[0].data.surv_mandays__a,'3');
+  assert.equal(surv.rows[0].data.surv_tech_findings_date__a,'2026-01-31');assert.equal(surv.rows[0].data.certificates_sent_date__a,'2026-02-02');
+  assert.ok(surv.ignored.includes('total mandays'));
 });
 
 test('bulk database transactions, permissions, matching, split parts and retries',async t=>{

@@ -56,6 +56,10 @@ test('summary parser handles vertical metadata, wide headers, dates and forward-
   assert.equal(mapping.getSurveillanceImportStatus(vertical, 'Certificate_Issued'), null);
   assert.equal(mapping.getSurveillanceImportStatus(vertical, 'Suspension_Letter_Sent'), null);
   assert.equal(mapping.getSurveillanceImportStatus(vertical, 'Future_Status'), null);
+  const wideDates = mapping.parseSummaryWorkbookRows([['COMPANY NAME','Surveillance 1 mandays','surveillance intimation letter','surv tech review','certificate issue'],['Payal','3','22-Jan-26','31-Jan-26','2-Feb-26']]);
+  assert.equal(wideDates.find(r => r.mapping.extColumn === 'intimation_sent_date__a').value, '2026-01-22');
+  assert.equal(wideDates.find(r => r.mapping.extColumn === 'surv_tech_findings_date__a').value, '2026-01-31');
+  assert.equal(mapping.getSurveillanceImportStatus(wideDates, null), 'Certificate_Issued');
   const wide = mapping.parseSummaryWorkbookRows([['Company Name','Scope'],['Acme','Manufacturing'],['surv  ncr RCA acceptance','19 Oct 2026']]);
   assert.equal(wide[0].value, 'Acme');
   assert.equal(mapping.getSurveillanceImportStatus(wide, 'Intimation_Sent'), 'Surv_Auditor_Accepted');

@@ -61,6 +61,7 @@ export const FIELD_MAPPINGS_SURV: Record<string, FieldMapping> = {
   'surv ncr rca acceptance':             { extColumn: 'surv_auditor_accepted_date__a',   kind: 'date' },
   'surv audit report':                   { extColumn: 'surv_report_sent_date__a',        kind: 'date' },
   'surv tech findings':                  { extColumn: 'surv_tech_findings_date__a',      kind: 'date' },
+  'surv tech review':                    { extColumn: 'surv_tech_findings_date__a',      kind: 'date' }, // real sheet's label
   'surv tech review checklist':          { extColumn: 'surv_tech_findings_file__a',      kind: 'file' }, // Not a date; file upload
   'surv tech review findings':           { extColumn: 'surv_tech_findings_notes__a',     kind: 'text' },
   'cdc':                                 { extColumn: 'cdc_date__a',                     kind: 'date' },
@@ -80,9 +81,8 @@ export const FIELD_MAPPINGS_SURV: Record<string, FieldMapping> = {
   'scope':                               { extColumn: 'scope__a',                        kind: 'text' },
   'iaf code':                            { extColumn: 'iaf_code__a',                     kind: 'text' },
   'no of empl':                          { extColumn: 'no_of_employees__a',              kind: 'text' },
-  // 'total mandays' and 'surveillance 1 mandays' are the same figure per this
-  // sheet's actual layout — both point at the one surv_mandays__a column.
-  'total mandays':                       { extColumn: 'surv_mandays__a',                 kind: 'text' },
+  // 'total mandays' is the initial-certification total (Stg 1 + Stg 2), a different
+  // figure from this visit's mandays in the real sheet (8 vs 3) — deliberately unmapped.
   'surv mandays':                        { extColumn: 'surv_mandays__a',                 kind: 'text' },
   'surveillance 1 mandays':              { extColumn: 'surv_mandays__a',                 kind: 'text' },
   'auditor team':                        { extColumn: 'auditor_team__a',                 kind: 'text' },
@@ -105,34 +105,12 @@ export const FIELD_MAPPINGS_SURV: Record<string, FieldMapping> = {
   'soa date':                            { extColumn: 'soa_date__a',                     kind: 'text' }, // TEXT not DATE — manual, no status implication
 };
 
-// Wide-table metadata columns only (Section A wide table: row 0 headers, row 1 data).
-// Deliberately excludes date columns that also appear in the vertical list — when both
-// are present, vertical list is the source of truth (same decision as External Client, 9b).
-export const WIDE_TABLE_MAPPINGS_SURV: Record<string, FieldMapping> = {
-  'company name':              FIELD_MAPPINGS_SURV['company name'],
-  'standard':                  FIELD_MAPPINGS_SURV['standard'],
-  'certificate no':            FIELD_MAPPINGS_SURV['certificate no'],
-  'country':                   FIELD_MAPPINGS_SURV['country'],
-  'address':                   FIELD_MAPPINGS_SURV['address'],
-  'scope':                     FIELD_MAPPINGS_SURV['scope'],
-  'iaf code':                  FIELD_MAPPINGS_SURV['iaf code'],
-  'no of empl':                FIELD_MAPPINGS_SURV['no of empl'],
-  'total mandays':             FIELD_MAPPINGS_SURV['total mandays'],
-  'surv mandays':              FIELD_MAPPINGS_SURV['surv mandays'],
-  'surveillance 1 mandays':    FIELD_MAPPINGS_SURV['surveillance 1 mandays'],
-  'auditor team':              FIELD_MAPPINGS_SURV['auditor team'],
-  'surv audit date':           FIELD_MAPPINGS_SURV['surv audit date'],
-  'surv auditor':              FIELD_MAPPINGS_SURV['surv auditor'],
-  'surv la':                   FIELD_MAPPINGS_SURV['surv la'],
-  'surv tech reviewer':        FIELD_MAPPINGS_SURV['surv tech reviewer'],
-  'surv cdc':                  FIELD_MAPPINGS_SURV['surv cdc'],
-  'director name':             FIELD_MAPPINGS_SURV['director name'],
-  'application reviewer':      FIELD_MAPPINGS_SURV['application reviewer'],
-  'application reviewer name': FIELD_MAPPINGS_SURV['application reviewer name'],
-  'appl reviewr name':         FIELD_MAPPINGS_SURV['appl reviewr name'],
-  'food category':             FIELD_MAPPINGS_SURV['food category'],
-  'soa date':                  FIELD_MAPPINGS_SURV['soa date'],
-};
+// Wide-table columns (row 0 headers, row 1 data) — metadata AND the milestone date
+// headings, since the real business sheet carries every date as a column heading.
+// If a vertical list below also repeats a label, the vertical value (parsed later) wins.
+export const WIDE_TABLE_MAPPINGS_SURV: Record<string, FieldMapping> = Object.fromEntries(
+  Object.entries(FIELD_MAPPINGS_SURV).filter(([, mapping]) => mapping.kind !== 'file'),
+);
 
 // Status progression for Surveillance 1 (13 statuses total).
 // Mirrors RenewalWorkflowBar.tsx's STAGES order (Sprint 3).
