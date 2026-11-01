@@ -52,7 +52,7 @@ No separate Surveillance 2 implementation is added. A future cycle discriminator
 - Added shared `BulkSummaryUpload.tsx` modal and `bulkSummaryMapping.ts` parser, used by all three existing Summary list tabs. The outer component renders no button for a non-admin; the two public bulk RPCs independently enforce admin role and tenant/app ownership.
 - Mapping dictionaries are reused for physical API names, kinds, summary mirrors and stage ordering. The generated server allowlist is parity-checked against those dictionaries. Legacy single-record parsers/uploads are unchanged by this sprint.
 - Added migration `298_admin_bulk_summary.sql` after existing local 291–297. It stores retry/audit results in private `tenant.bulk_summary_import_results`. Private helpers validate data, match records, merge standards and update Initial summaries atomically. Existing atomic Surveillance/Recertification import RPCs are used inside each row transaction.
-- The UI validates Type against the current button's workflow, dates, conflicting aliases, repeated company/group rows and formula-cache errors. It supports worksheet selection and explicit column remapping. Populated excluded columns require acknowledgement; ambiguous Recert-labelled dates are not silently assigned to Initial Stage 2.
+- The UI does **not** validate the sheet's Type column (see "Business-review corrections, 1 November 2026"). It validates dates, conflicting aliases, repeated company/group rows and formula-cache errors. It supports worksheet selection and explicit column remapping. Populated excluded columns require acknowledgement; ambiguous Recert-labelled dates are not silently assigned to Initial Stage 2.
 - The preview shows each resulting standard group, create/update target, linked original client, current/proposed values and errors. Multiple eligible candidates or a legacy blank certification body need an explicit selection. Each selected part commits separately; failed/unselected parts are reported without claiming total success.
 - The supplied source workbook is stored once by SHA-256 file identity in the private `tenant-uploads` bucket. A restrictive Storage policy reserves bulk sources for tenant admins. The complete multi-client workbook is not attached to a client-visible record pack.
 - Storage upload precedes the row transactions. If all selected parts fail, the private source can remain for retry; it is not automatically deleted after an uncertain outcome. No automatic cleanup/retention job is included in this sprint.
@@ -75,6 +75,17 @@ Re-verification: `npm run test:bulk-summary` passed 11 checks; `npm run test:sur
 - New Surveillance/Recertification records inherit contact/email from their linked original client when the spreadsheet leaves these blank. Explicit spreadsheet values override the new audit copy. New original identities also retain supplied address, country, scope, employee count and IAF code, with the applicable Initial Summary mirrors.
 - Added regression coverage for these cases and for rerunning the complete updated migration 298 after imports. The replay test preserves existing records/results and returns an already-completed part without creating duplicates.
 - These changes amend **298**, with no migration 299. If an earlier copy of 298 was already applied, run the complete updated 298; this replaces functions/policy without deleting import results. It does not retrospectively repair data imported with an older version.
+
+## Business-review corrections, 1 November 2026
+
+Found by running the real business workbook (`Sur summary.xlsx`) through the parsers. Parser/mapping changes only; **no SQL change, no new migration**.
+
+- **Type column no longer validated.** The sheet's `type` (e.g. `Initial`) is the client's certification type, not the upload it belongs to, so it blocked every Surv 1 upload with `Type "Initial" does not belong`. Check removed from `bulkSummaryMapping.ts`.
+- **`total mandays` no longer maps to Surveillance mandays.** In the real sheet it is the Stage 1 + Stage 2 total (8) and `Surveillance 1 mandays` is a different figure (3). Mapping both onto `surv_mandays__a` raised `Conflicting columns map to surv_mandays__a`. Only `Surveillance 1 mandays` / `surv mandays` import now; `total mandays` appears in the "not imported" acknowledgement list. This reverses the "same figure" assumption in `Sprint_7.md` §12.3.
+- **`surv tech review` now maps** to `surv_tech_findings_date__a` (it was listed as unimported). This label applies to both bulk and individual import.
+- **Individual import now reads dates from wide-sheet column headings** (see `Sprint_7.md` §13). Previously only vertical "label | date" rows were read.
+
+Verification: `npm run test:surveillance` (29) and `npm run test:bulk-summary` (12) pass; `npx tsc --noEmit` clean. Not yet click-tested against live Supabase.
 
 Sprint 12 and Sprint 13 remain unstarted, pending the user's explicit go-ahead.
 

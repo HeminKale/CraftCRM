@@ -551,7 +551,9 @@ standing "Do NOT edit new client flow" rule.
   Renewal migration but nothing ever imported into it until now
 - New column `cdc_name__a` (migration 275) + mapping from `surv CDC`
 
-### 3. `total mandays` vs `Surveillance 1 mandays` — confirmed same figure
+### 3. `total mandays` vs `Surveillance 1 mandays` — ~~confirmed same figure~~ SUPERSEDED (1 Nov 2026, see §13)
+
+> **Superseded.** The real business sheet shows different values (total 8, Surveillance 1 = 3). `total mandays` is no longer mapped; only `Surveillance 1 mandays` / `surv mandays` feed `surv_mandays__a`. Original text kept below for history.
 
 User confirmed: same value. Added `'total mandays'` as an additional label
 pointing at the same `surv_mandays__a` column — no new field.
@@ -592,3 +594,13 @@ sprint hasn't shipped yet; used 65/66 to avoid a collision once it does.
 **Still not applied:** migration 275 has been written but not run — same
 manual-deploy step every migration in this repo needs.
 
+
+---
+
+## §13 — Individual import now reads wide-sheet date headings (1 November 2026)
+
+**Bug:** uploading the real business sheet (`Sur summary.xlsx`, one header row with every milestone date as a column heading) through the individual importer stamped no sheet dates — the dates on the record stayed whatever the workflow had stamped (today). `WIDE_TABLE_MAPPINGS_SURV` deliberately excluded date columns, and the vertical pass starts at row 2, so date headings were never read.
+
+**Fix** (`surveilanceSheetMapping.ts`, no SQL): `WIDE_TABLE_MAPPINGS_SURV` is now derived from `FIELD_MAPPINGS_SURV` minus `kind: 'file'`, so date headings are parsed in the wide pass. If a vertical list below repeats a label, the vertical value still wins. Also added `surv tech review` → `surv_tech_findings_date__a`, and removed `total mandays` (§12.3 superseded).
+
+Result on the real sheet: 12 dates read (22-Jan-26 → 2-Feb-26), preview shows status advancing to `Certificate_Issued`. Re-upload the sheet to correct records already imported with today's dates (sheet dates overwrite existing ones). Regression test added in `tests/surveillance-qa.test.cjs`.

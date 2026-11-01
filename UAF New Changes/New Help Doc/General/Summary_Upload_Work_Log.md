@@ -237,3 +237,12 @@ Added only `303_suspension_pdf_delivery.sql`; earlier migrations remain unchange
 **95 local checks passed:** 29 Surveillance, 12 actual bulk-summary integrations through 303, 18 notifications and 36 non-response/DOCX/PDF checks. Conversion tests mock office output and cover personalised DOCX input, PDF MIME/filename/bytes, immutable retry, isolated concurrent profiles, cleanup, timeout options, missing/malformed/empty/oversized output, conversion failure, saved DOCX denial, SQL guard/replay/private wrapper grants and preserved submission history. All provider requests are mocked. Two initial fixture mistakes (profile URL extraction and pdf-lib's automatic default page) were corrected; final suites pass. Standalone TypeScript and isolated production build passed. Only Next's generated isolated-build type include was removed from tsconfig; unrelated work was preserved.
 
 Updated handoff, migration list, BA answer log, sprint index/notes and readiness SQL. Remaining release gaps: actual DOCX/token/content, real LibreOffice/Docker conversion with template fonts and visual PDF QA, registration/activation, day-30 wording, BA Reject decision, restoration rights and live/multi-session release QA. No live SQL, customer email, template activation, scheduling, deployment, provider/DNS change or later sprint was performed.
+
+## 1 November 2026: business-sheet corrections to Surv 1 summary upload
+
+Real workbook `Sur summary.xlsx` exposed three problems. Parser/mapping only; no SQL or migration change.
+
+- **Bulk:** removed the Type-column check (`Initial` blocked every Surv 1 row) and stopped mapping `total mandays` onto `surv_mandays__a` (8 vs 3 are different figures; it raised a conflict). Mapped `surv tech review` to the Tech Findings date.
+- **Individual:** wide-sheet date headings are now read (previously zero dates parsed, so records kept workflow "today" dates). Re-upload to correct already-imported records.
+- Tests added in `surveillance-qa.test.cjs` and `bulk-summary.test.cjs`; 29 + 12 pass, `tsc` clean. Not click-tested on live Supabase.
+- Docs updated: `Sprint_11_Bulk_Summary_Upload.md`, `Sprint_7.md` (§12.3 superseded, new §13).
